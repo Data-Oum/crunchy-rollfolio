@@ -1,12 +1,24 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { PlasmaCanvas } from "@/components/PlasmaCanvas";
+import { AnimeNav } from "@/components/AnimeNav";
+import { AnimeHero } from "@/components/AnimeHero";
+import { AnimeShowcase } from "@/components/AnimeShowcase";
+import { AnimeJourney } from "@/components/AnimeJourney";
+import { AnimeContact } from "@/components/AnimeContact";
+import { VoiceNarrator } from "@/components/VoiceNarrator";
 
 const Index = () => {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
+    <div className="relative min-h-screen bg-background anime-grid">
+      <PlasmaCanvas />
+      <div className="scan-line fixed inset-0 pointer-events-none z-[1]" />
+      <AnimeNav />
+      <main className="relative z-10">
+        <AnimeHero />
+        <AnimeShowcase />
+        <AnimeJourney />
+        <AnimeContact />
+      </main>
+      <VoiceNarrator />
     </div>
   );
 };
