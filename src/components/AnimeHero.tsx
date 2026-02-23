@@ -1,22 +1,18 @@
 import { motion } from "framer-motion";
 import plasmaOrb from "@/assets/plasma-orb.png";
 import animeAvatar from "@/assets/anime-avatar.png";
+import { PROFILE } from "@/data/profile";
 
 export const AnimeHero = () => {
   return (
     <section id="hero" className="relative min-h-screen flex items-center justify-center overflow-hidden pt-16">
-      {/* Background plasma orb image */}
+      {/* Background plasma orb */}
       <motion.div
         animate={{ scale: [1, 1.05, 1], opacity: [0.3, 0.5, 0.3] }}
         transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
         className="absolute inset-0 flex items-center justify-center pointer-events-none"
       >
-        <img
-          src={plasmaOrb}
-          alt=""
-          className="w-[600px] md:w-[900px] opacity-40 blur-sm"
-          loading="lazy"
-        />
+        <img src={plasmaOrb} alt="" className="w-[600px] md:w-[900px] opacity-40 blur-sm" loading="lazy" />
       </motion.div>
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
@@ -29,7 +25,7 @@ export const AnimeHero = () => {
               transition={{ duration: 0.8, delay: 0.2 }}
             >
               <span className="inline-block px-3 py-1 rounded-full bg-primary/10 border border-primary/30 text-primary text-xs font-mono tracking-widest mb-6">
-                クランチロール • MEGA FAN ENTRY
+                呪術師 • SOFTWARE ENGINEER
               </span>
             </motion.div>
 
@@ -37,12 +33,21 @@ export const AnimeHero = () => {
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.4 }}
-              className="text-5xl sm:text-6xl lg:text-8xl font-bold leading-none mb-6"
+              className="text-5xl sm:text-6xl lg:text-8xl font-bold leading-none mb-4"
             >
-              <span className="text-gradient-crunchy">CRUNCH</span>
+              <span className="text-gradient-crunchy">{PROFILE.nameFirst.toUpperCase()}</span>
               <br />
-              <span className="text-foreground">FOLIO</span>
+              <span className="text-foreground text-4xl sm:text-5xl lg:text-6xl">{PROFILE.nameLast.toUpperCase()}</span>
             </motion.h1>
+
+            <motion.p
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.5 }}
+              className="text-primary font-mono text-sm mb-2"
+            >
+              {PROFILE.title}
+            </motion.p>
 
             <motion.p
               initial={{ opacity: 0, y: 30 }}
@@ -50,24 +55,23 @@ export const AnimeHero = () => {
               transition={{ duration: 0.8, delay: 0.6 }}
               className="text-muted-foreground text-lg sm:text-xl max-w-lg mb-8 mx-auto lg:mx-0"
             >
-              Where <span className="text-primary">cursed energy</span> meets code.
-              A portfolio forged in the fires of anime obsession.
+              {PROFILE.tagline}
             </motion.p>
 
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.8 }}
-              className="flex flex-wrap gap-3 justify-center lg:justify-start"
+              className="flex flex-wrap gap-2 justify-center lg:justify-start"
             >
-              {["呪術廻戦", "鬼滅の刃", "ワンピース", "進撃の巨人", "ドラゴンボール"].map((tag, i) => (
+              {PROFILE.roles.map((role, i) => (
                 <motion.span
-                  key={tag}
+                  key={role}
                   whileHover={{ scale: 1.1, y: -2 }}
                   className="px-3 py-1.5 rounded-lg bg-muted text-muted-foreground text-xs font-mono border border-border hover:border-primary/50 hover:text-primary transition-all cursor-default"
                   style={{ animationDelay: `${i * 0.1}s` }}
                 >
-                  {tag}
+                  {role}
                 </motion.span>
               ))}
             </motion.div>
@@ -79,11 +83,7 @@ export const AnimeHero = () => {
               transition={{ delay: 1.2 }}
               className="flex gap-8 mt-10 justify-center lg:justify-start"
             >
-              {[
-                { value: "500+", label: "Episodes" },
-                { value: "50+", label: "Series" },
-                { value: "∞", label: "Obsession" },
-              ].map((stat) => (
+              {PROFILE.stats.map((stat) => (
                 <div key={stat.label} className="text-center">
                   <div className="text-2xl font-bold text-primary">{stat.value}</div>
                   <div className="text-xs text-muted-foreground font-mono">{stat.label}</div>
@@ -92,7 +92,7 @@ export const AnimeHero = () => {
             </motion.div>
           </div>
 
-          {/* Right: Avatar */}
+          {/* Right: Avatar with anime character vibe */}
           <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -100,6 +100,7 @@ export const AnimeHero = () => {
             className="flex-shrink-0"
           >
             <div className="relative">
+              {/* Orbit rings — anime power aura */}
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
@@ -108,22 +109,61 @@ export const AnimeHero = () => {
               <motion.div
                 animate={{ rotate: -360 }}
                 transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
-                className="absolute -inset-8 rounded-full border border-cursed/10"
+                className="absolute -inset-8 rounded-full border border-secondary/10"
               />
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+                className="absolute -inset-12 rounded-full border border-primary/5"
+              />
+
+              {/* Energy particles */}
+              {[...Array(6)].map((_, i) => (
+                <motion.div
+                  key={i}
+                  animate={{
+                    y: [0, -20 - i * 10, 0],
+                    x: [0, (i % 2 === 0 ? 10 : -10), 0],
+                    opacity: [0, 0.8, 0],
+                    scale: [0, 1, 0],
+                  }}
+                  transition={{
+                    duration: 2 + i * 0.5,
+                    repeat: Infinity,
+                    delay: i * 0.4,
+                  }}
+                  className="absolute w-1.5 h-1.5 rounded-full bg-primary"
+                  style={{
+                    top: `${30 + Math.random() * 40}%`,
+                    left: `${20 + Math.random() * 60}%`,
+                  }}
+                />
+              ))}
+
               <div className="w-48 h-48 sm:w-64 sm:h-64 lg:w-80 lg:h-80 rounded-full overflow-hidden glow-crunchy border-2 border-primary/40">
                 <img
                   src={animeAvatar}
-                  alt="Anime Avatar"
+                  alt={PROFILE.name}
                   className="w-full h-full object-cover plasma-pulse"
                 />
               </div>
-              {/* Floating badge */}
+
+              {/* Power level badge */}
               <motion.div
                 animate={{ y: [-5, 5, -5] }}
                 transition={{ duration: 3, repeat: Infinity }}
                 className="absolute -bottom-2 -right-2 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-mono font-bold glow-crunchy"
               >
-                プレミアム
+                LVL ∞ ARCHITECT
+              </motion.div>
+
+              {/* Anime-style power indicator */}
+              <motion.div
+                animate={{ y: [5, -5, 5] }}
+                transition={{ duration: 4, repeat: Infinity }}
+                className="absolute -top-2 -left-2 px-2 py-1 rounded bg-secondary/90 text-secondary-foreground text-[10px] font-mono font-bold"
+              >
+                呪力 MAX
               </motion.div>
             </div>
           </motion.div>
