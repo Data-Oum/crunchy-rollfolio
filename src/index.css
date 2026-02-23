@@ -1,96 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
-
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 0 0% 2%;
+    --foreground: 0 0% 100%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card: 0 0% 4%;
+    --card-foreground: 0 0% 100%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 4%;
+    --popover-foreground: 0 0% 100%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 25 93% 54%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 270 60% 55%;
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 0 0% 8%;
+    --muted-foreground: 0 0% 65%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 25 93% 54%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 0 0% 12%;
+    --input: 0 0% 12%;
+    --ring: 25 93% 54%;
 
-    --radius: 0.5rem;
+    --radius: 0.75rem;
 
-    --sidebar-background: 0 0% 98%;
+    /* Crunchyroll custom tokens */
+    --crunchy-orange: 25 93% 54%;
+    --crunchy-deep: 0 0% 3%;
+    --crunchy-surface: 0 0% 6%;
+    --crunchy-glow: 25 100% 60%;
+    --cursed-purple: 270 60% 55%;
+    --cursed-deep: 270 80% 30%;
+    --anime-gold: 43 65% 55%;
+    --anime-cyan: 199 90% 70%;
+    --anime-red: 0 100% 60%;
+    --anime-green: 160 67% 52%;
 
-    --sidebar-foreground: 240 5.3% 26.1%;
+    --gradient-crunchy: linear-gradient(135deg, hsl(25 93% 54%), hsl(35 100% 55%));
+    --gradient-cursed: linear-gradient(135deg, hsl(270 60% 55%), hsl(25 93% 54%));
+    --gradient-dark: linear-gradient(180deg, hsl(0 0% 2%), hsl(0 0% 5%));
 
-    --sidebar-primary: 240 5.9% 10%;
+    --shadow-crunchy: 0 0 40px hsl(25 93% 54% / 0.3);
+    --shadow-cursed: 0 0 60px hsl(270 60% 55% / 0.2);
+    --shadow-glow: 0 0 80px hsl(25 100% 60% / 0.15);
 
-    --sidebar-primary-foreground: 0 0% 98%;
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
 
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
-  }
-
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-background: 0 0% 4%;
+    --sidebar-foreground: 0 0% 90%;
+    --sidebar-primary: 25 93% 54%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 0 0% 8%;
+    --sidebar-accent-foreground: 0 0% 90%;
+    --sidebar-border: 0 0% 12%;
+    --sidebar-ring: 25 93% 54%;
   }
 }
 
@@ -101,5 +77,106 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-display);
+    overflow-x: hidden;
   }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+  }
+
+  code, pre, .mono {
+    font-family: var(--font-mono);
+  }
+}
+
+@layer components {
+  .text-gradient-crunchy {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(25 93% 54%), hsl(35 100% 60%));
+  }
+
+  .text-gradient-cursed {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(270 60% 55%), hsl(25 93% 54%));
+  }
+
+  .glow-crunchy {
+    box-shadow: var(--shadow-crunchy);
+  }
+
+  .glow-cursed {
+    box-shadow: var(--shadow-cursed);
+  }
+
+  .border-glow {
+    border: 1px solid hsl(25 93% 54% / 0.3);
+  }
+
+  .glass-card {
+    @apply bg-card/60 backdrop-blur-xl border-glow rounded-xl;
+  }
+
+  .anime-grid {
+    background-image:
+      linear-gradient(hsl(25 93% 54% / 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(25 93% 54% / 0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+  }
+
+  .plasma-pulse {
+    animation: plasma-pulse 4s ease-in-out infinite;
+  }
+
+  .float-anime {
+    animation: float-anime 6s ease-in-out infinite;
+  }
+
+  .scan-line {
+    background: linear-gradient(
+      transparent 0%,
+      hsl(25 93% 54% / 0.03) 50%,
+      transparent 100%
+    );
+    animation: scan-line 8s linear infinite;
+  }
+}
+
+@keyframes plasma-pulse {
+  0%, 100% { 
+    filter: brightness(1) saturate(1);
+    transform: scale(1);
+  }
+  50% { 
+    filter: brightness(1.2) saturate(1.3);
+    transform: scale(1.02);
+  }
+}
+
+@keyframes float-anime {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-20px); }
+}
+
+@keyframes scan-line {
+  0% { background-position: 0 -100vh; }
+  100% { background-position: 0 100vh; }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(0 0% 3%);
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(25 93% 54% / 0.4);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(25 93% 54% / 0.6);
 }
