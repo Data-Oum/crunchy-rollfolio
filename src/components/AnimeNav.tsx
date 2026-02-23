@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { PROFILE } from "@/data/profile";
 
 const NAV_ITEMS = [
   { label: "ホーム", en: "Home", href: "#hero" },
-  { label: "アニメ", en: "Anime", href: "#showcase" },
+  { label: "作品", en: "Projects", href: "#showcase" },
   { label: "冒険", en: "Journey", href: "#journey" },
   { label: "接触", en: "Contact", href: "#contact" },
 ];
@@ -33,10 +34,10 @@ export const AnimeNav = () => {
             onClick={() => scrollTo("#hero")}
           >
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center glow-crunchy">
-              <span className="text-primary-foreground font-bold text-sm font-mono">CR</span>
+              <span className="text-primary-foreground font-bold text-sm font-mono">AC</span>
             </div>
             <span className="text-foreground font-bold text-lg tracking-tight hidden sm:block">
-              CRUNCH<span className="text-primary">FOLIO</span>
+              {PROFILE.nameFirst.toUpperCase()}<span className="text-primary">FOLIO</span>
             </span>
           </motion.div>
 
@@ -74,16 +75,10 @@ export const AnimeNav = () => {
           </div>
 
           {/* Mobile hamburger */}
-          <button
-            onClick={() => setIsOpen(!isOpen)}
-            className="md:hidden p-2 text-foreground"
-          >
-            <motion.div animate={isOpen ? { rotate: 45, y: 6 } : { rotate: 0, y: 0 }}
-              className="w-5 h-0.5 bg-primary mb-1.5" />
-            <motion.div animate={isOpen ? { opacity: 0 } : { opacity: 1 }}
-              className="w-5 h-0.5 bg-primary mb-1.5" />
-            <motion.div animate={isOpen ? { rotate: -45, y: -6 } : { rotate: 0, y: 0 }}
-              className="w-5 h-0.5 bg-primary" />
+          <button onClick={() => setIsOpen(!isOpen)} className="md:hidden p-2 text-foreground">
+            <motion.div animate={isOpen ? { rotate: 45, y: 6 } : { rotate: 0, y: 0 }} className="w-5 h-0.5 bg-primary mb-1.5" />
+            <motion.div animate={isOpen ? { opacity: 0 } : { opacity: 1 }} className="w-5 h-0.5 bg-primary mb-1.5" />
+            <motion.div animate={isOpen ? { rotate: -45, y: -6 } : { rotate: 0, y: 0 }} className="w-5 h-0.5 bg-primary" />
           </button>
         </div>
       </div>

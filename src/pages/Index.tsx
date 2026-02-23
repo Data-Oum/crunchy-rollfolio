@@ -4,7 +4,7 @@ import { AnimeHero } from "@/components/AnimeHero";
 import { AnimeShowcase } from "@/components/AnimeShowcase";
 import { AnimeJourney } from "@/components/AnimeJourney";
 import { AnimeContact } from "@/components/AnimeContact";
-import { VoiceNarrator } from "@/components/VoiceNarrator";
+import { SiriOrb } from "@/components/SiriOrb";
 
 const Index = () => {
   return (
@@ -18,7 +18,7 @@ const Index = () => {
         <AnimeJourney />
         <AnimeContact />
       </main>
-      <VoiceNarrator />
+      <SiriOrb />
     </div>
   );
 };
