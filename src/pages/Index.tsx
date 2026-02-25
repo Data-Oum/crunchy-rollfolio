@@ -22,7 +22,7 @@ const SectionFallback = (
   }}>
     <span style={{
       display: "inline-block", width: 5, height: 5, borderRadius: "50%",
-      background: "rgba(201,168,76,0.6)", marginRight: 10,
+      background: "rgba(244,117,33,0.6)", marginRight: 10,
       animation: "pulse 1.4s ease-in-out infinite",
     }} />
     読み込み中...

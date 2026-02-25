@@ -62,7 +62,6 @@ export default {
           deep: "hsl(var(--cursed-deep))",
         },
         anime: {
-          gold: "hsl(var(--anime-gold))",
           cyan: "hsl(var(--anime-cyan))",
           red: "hsl(var(--anime-red))",
           green: "hsl(var(--anime-green))",

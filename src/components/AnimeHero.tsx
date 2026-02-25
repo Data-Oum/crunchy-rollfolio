@@ -62,7 +62,7 @@ function StatCounter({ value, label, index }: { value: string; label: string; in
     <motion.div ref={ref} whileHover={{ scale: 1.08, y: -4 }} className="relative group cursor-default">
       <div className="absolute inset-0 bg-primary/10 rounded-lg blur-md group-hover:bg-primary/20 transition-all" />
       <div className="relative border border-primary/30 rounded-lg px-4 py-3 text-center bg-background/40 backdrop-blur-sm">
-        <div className="text-2xl sm:text-3xl font-black text-gradient-gold font-mono leading-none">{value}</div>
+        <div className="text-2xl sm:text-3xl font-black text-gradient-crunchy font-mono leading-none">{value}</div>
         <div className="text-[10px] text-muted-foreground font-mono tracking-widest mt-1 uppercase">{label}</div>
       </div>
     </motion.div>
@@ -84,7 +84,7 @@ function SpeedLines() {
   );
 }
 
-const KANJI = ["呪", "術", "廻", "戦", "力", "魂", "無", "限", "金", "剛"];
+const KANJI = ["呪", "術", "廻", "戦", "力", "魂", "無", "限", "炎", "橙"];
 
 function FloatingKanji() {
   return (
@@ -152,7 +152,7 @@ export const AnimeHero = () => {
     <section id="hero" ref={sectionRef} className="relative min-h-screen flex items-center justify-center overflow-hidden pt-16" onMouseMove={handleMouseMove}>
       <motion.div style={{ y: bgY }} className="absolute inset-0 pointer-events-none">
         <motion.div initial={{ opacity: 0, scale: 1.15 }} animate={{ opacity: 0.15, scale: 1 }} transition={{ duration: 3, ease: "easeOut" }}>
-          <img src={animeBattle} alt="" className="w-full h-full object-cover" style={{ filter: "saturate(1.4) hue-rotate(20deg)" }} />
+          <img src={animeBattle} alt="" className="w-full h-full object-cover" style={{ filter: "saturate(1.4) hue-rotate(-10deg)" }} />
         </motion.div>
         <div className="absolute inset-0 bg-gradient-to-b from-background/60 via-background/40 to-background" />
       </motion.div>
@@ -164,14 +164,15 @@ export const AnimeHero = () => {
         <motion.img src={plasmaOrb} alt=""
           animate={{ scale: [1, 1.06, 1], opacity: [0.15, 0.3, 0.15] }}
           transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-          className="w-[700px] md:w-[1000px] blur-sm" />
+          className="w-[700px] md:w-[1000px] blur-sm"
+          style={{ filter: "hue-rotate(-20deg) saturate(1.5)" }} />
       </motion.div>
 
       <motion.img src={energyBlast} alt=""
         animate={{ opacity: [0.04, 0.12, 0.04], rotate: [0, 5, 0] }}
         transition={{ duration: 6, repeat: Infinity }}
         className="absolute right-0 top-1/4 w-64 pointer-events-none select-none"
-        style={{ filter: "hue-rotate(40deg) saturate(2)" }} />
+        style={{ filter: "hue-rotate(-10deg) saturate(2)" }} />
 
       <div className="absolute inset-0 pointer-events-none opacity-[0.05] mix-blend-screen overflow-hidden">
         <video autoPlay muted loop playsInline className="w-full h-full object-cover" src="/videos/triangle.mp4" />
@@ -194,7 +195,7 @@ export const AnimeHero = () => {
                 {PROFILE.nameFirst.toUpperCase()}
               </div>
               <h1 className="text-6xl sm:text-7xl lg:text-9xl font-black leading-none tracking-tight relative">
-                <GlitchText text={PROFILE.nameFirst.toUpperCase()} className="text-gradient-gold" delay={1200} />
+                <GlitchText text={PROFILE.nameFirst.toUpperCase()} className="text-gradient-crunchy" delay={1200} />
               </h1>
             </div>
 

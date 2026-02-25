@@ -24,20 +24,13 @@ export const AnimeContact = () => {
 
   useEffect(() => {
     const ctx = gsap.context(() => {
-      // CTA card dramatic reveal
       const card = sectionRef.current?.querySelector(".cta-card");
       if (card) {
-        gsap.fromTo(card,
-          { y: 100, opacity: 0, scale: 0.85, rotateX: 5 },
-          {
-            y: 0, opacity: 1, scale: 1, rotateX: 0,
-            duration: 1.2, ease: "power3.out",
-            scrollTrigger: { trigger: card, start: "top 80%" },
-          }
-        );
+        gsap.fromTo(card, { y: 100, opacity: 0, scale: 0.85, rotateX: 5 }, {
+          y: 0, opacity: 1, scale: 1, rotateX: 0, duration: 1.2, ease: "power3.out",
+          scrollTrigger: { trigger: card, start: "top 80%" },
+        });
       }
-
-      // Footer slide
       const footer = sectionRef.current?.querySelector("footer");
       if (footer) {
         gsap.fromTo(footer, { y: 30, opacity: 0 }, {
@@ -51,51 +44,40 @@ export const AnimeContact = () => {
 
   return (
     <section id="contact" ref={sectionRef} className="relative py-32 overflow-hidden"
-      style={{ background: "linear-gradient(180deg, hsl(var(--background)), hsl(0 0% 1%))" }}>
+      style={{ background: "linear-gradient(180deg, hsl(var(--background)), hsl(240 6% 1%))" }}>
 
-      {/* Parallax Anime city BG */}
       <motion.div style={{ y: bgY }} className="absolute inset-0 pointer-events-none">
         <img src={animeCity} alt="" className="w-full h-full object-cover opacity-[0.1]"
-          style={{ filter: "saturate(1.3) brightness(0.8)", mixBlendMode: "luminosity" }} />
+          style={{ filter: "saturate(1.3) brightness(0.8) hue-rotate(-10deg)", mixBlendMode: "luminosity" }} />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-background" />
       </motion.div>
 
-      {/* Energy blast */}
       <motion.img src={energyBlast} alt=""
         animate={{ opacity: [0.04, 0.12, 0.04], rotate: [0, -5, 0] }}
         transition={{ duration: 7, repeat: Infinity }}
         className="absolute right-0 bottom-0 w-96 pointer-events-none select-none"
         style={{ mixBlendMode: "screen", transformOrigin: "bottom right" }} />
 
-      {/* Bottom glow */}
       <div className="absolute bottom-0 left-0 right-0 h-px"
         style={{ background: "linear-gradient(90deg, transparent, hsl(var(--primary) / 0.5), transparent)" }} />
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="text-center">
-          {/* Label */}
           <div className="inline-flex items-center gap-3 mb-12">
             <div className="w-20 h-px" style={{ background: "linear-gradient(90deg, transparent, hsl(var(--primary)))" }} />
             <span className="text-xs font-mono tracking-[0.4em] text-primary">接触 • LET'S CONNECT</span>
             <div className="w-20 h-px" style={{ background: "linear-gradient(90deg, hsl(var(--primary)), transparent)" }} />
           </div>
 
-          {/* CTA Card */}
           <div className="cta-card relative max-w-2xl mx-auto" style={{ perspective: "1200px" }}>
-            {/* Animated border glow */}
-            <motion.div
-              animate={{ opacity: [0.3, 0.8, 0.3] }}
-              transition={{ duration: 4, repeat: Infinity }}
+            <motion.div animate={{ opacity: [0.3, 0.8, 0.3] }} transition={{ duration: 4, repeat: Infinity }}
               className="absolute -inset-px rounded-2xl pointer-events-none"
-              style={{ background: "linear-gradient(135deg, hsl(var(--primary) / 0.4), transparent 40%, hsl(var(--secondary) / 0.3), transparent 70%, hsl(var(--primary) / 0.4))" }}
-            />
+              style={{ background: "linear-gradient(135deg, hsl(var(--primary) / 0.4), transparent 40%, hsl(var(--secondary) / 0.3), transparent 70%, hsl(var(--primary) / 0.4))" }} />
 
             <div className="relative rounded-2xl p-10 sm:p-14 overflow-hidden bg-card/90 border border-primary/15">
-              {/* Scanlines */}
               <div className="absolute inset-0 pointer-events-none opacity-[0.02]"
                 style={{ backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 3px, hsl(var(--foreground) / 0.6) 3px, hsl(var(--foreground) / 0.6) 4px)" }} />
 
-              {/* Corner accents */}
               {["top-0 left-0", "top-0 right-0", "bottom-0 left-0", "bottom-0 right-0"].map((c) => (
                 <div key={c} className={`absolute ${c} w-8 h-8 opacity-30`}>
                   <div className="w-full h-px bg-primary" style={c.includes("bottom") ? { position: "absolute", bottom: 0 } : {}} />
@@ -113,13 +95,11 @@ export const AnimeContact = () => {
                 <span className="text-primary"> That's Amit.</span>
               </p>
 
-              {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-4 justify-center mb-6">
                 <motion.a whileHover={{ scale: 1.05, y: -3 }} whileTap={{ scale: 0.95 }}
                   href={`mailto:${PROFILE.email}`}
                   className="inline-flex items-center justify-center gap-2 px-7 py-4 rounded-xl font-bold text-sm text-primary-foreground bg-primary relative overflow-hidden group"
                   style={{ boxShadow: "0 0 40px hsl(var(--primary) / 0.3), 0 4px 20px hsl(var(--primary) / 0.15)" }}>
-                  {/* Shine */}
                   <motion.div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
                     style={{ background: "linear-gradient(105deg, transparent 40%, hsl(0 0% 100% / 0.15) 45%, transparent 50%)" }}
                     animate={{ x: ["-100%", "200%"] }}
@@ -136,24 +116,22 @@ export const AnimeContact = () => {
                 </motion.a>
               </div>
 
-              {/* Buy Me a Coffee — prominent */}
               <motion.a href={BMC_URL} target="_blank" rel="noopener noreferrer"
                 whileHover={{ scale: 1.06, y: -3 }} whileTap={{ scale: 0.94 }}
                 className="inline-flex items-center gap-2.5 px-6 py-3 rounded-xl font-mono text-sm font-bold mb-10 relative overflow-hidden group"
                 style={{
-                  background: "linear-gradient(135deg, hsl(43 65% 55% / 0.15), hsl(25 93% 54% / 0.1))",
-                  border: "1px solid hsl(43 65% 55% / 0.3)",
-                  boxShadow: "0 0 20px hsl(43 65% 55% / 0.1)",
+                  background: "linear-gradient(135deg, hsl(24 91% 54% / 0.15), hsl(24 100% 60% / 0.1))",
+                  border: "1px solid hsl(24 91% 54% / 0.3)",
+                  boxShadow: "0 0 20px hsl(24 91% 54% / 0.1)",
                 }}>
                 <motion.div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                  style={{ background: "linear-gradient(105deg, transparent 35%, hsl(43 65% 55% / 0.15) 45%, transparent 55%)" }}
+                  style={{ background: "linear-gradient(105deg, transparent 35%, hsl(24 91% 54% / 0.15) 45%, transparent 55%)" }}
                   animate={{ x: ["-100%", "200%"] }}
                   transition={{ duration: 2, repeat: Infinity, repeatDelay: 4 }} />
                 <span className="text-xl relative z-10">☕</span>
                 <span className="text-foreground relative z-10">Buy Me a Coffee</span>
               </motion.a>
 
-              {/* Socials */}
               <div className="flex gap-3 justify-center flex-wrap">
                 {SOCIALS.map((s, i) => (
                   <motion.a key={s.label}
@@ -174,7 +152,6 @@ export const AnimeContact = () => {
           </div>
         </div>
 
-        {/* Footer */}
         <footer className="mt-24 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-border/15">
           <p className="text-muted-foreground/40 text-xs font-mono">{PROFILE.name.toUpperCase()} © 2025</p>
           <p className="text-muted-foreground/40 text-xs font-mono">

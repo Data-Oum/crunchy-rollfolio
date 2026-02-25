@@ -58,19 +58,19 @@ export const AnimeNav = () => {
           <motion.div whileHover={{ scale: 1.05 }} onClick={() => scrollTo("#hero")}
             className="flex items-center gap-2.5 cursor-pointer group">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center relative overflow-hidden"
-              style={{ background: "linear-gradient(135deg, #DAA520, #F5C842)", boxShadow: "0 0 20px hsl(var(--primary) / 0.3)" }}>
+              style={{ background: "linear-gradient(135deg, #F47521, #FF9B4A)", boxShadow: "0 0 20px hsl(var(--primary) / 0.3)" }}>
               <motion.div animate={{ rotate: 360 }}
                 transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
                 className="absolute inset-0 rounded-xl opacity-30"
                 style={{ background: "conic-gradient(from 0deg, transparent, hsl(var(--foreground) / 0.4), transparent)" }} />
-              <span className="text-background font-black text-xs font-mono relative z-10">AC</span>
+              <span className="text-primary-foreground font-black text-xs font-mono relative z-10">AC</span>
             </div>
             <div className="hidden sm:block">
               <span className="text-foreground font-black text-lg tracking-tight"
                 style={{ fontFamily: "'Impact','Arial Black',sans-serif" }}>
                 {PROFILE.nameFirst.toUpperCase()}
               </span>
-              <span className="text-gradient-gold font-black text-lg tracking-tight"
+              <span className="text-gradient-crunchy font-black text-lg tracking-tight"
                 style={{ fontFamily: "'Impact','Arial Black',sans-serif" }}>
                 FOLIO
               </span>
