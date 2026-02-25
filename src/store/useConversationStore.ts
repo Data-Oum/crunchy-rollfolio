@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 
 export interface UserProfile {
   name: string;
@@ -32,34 +32,29 @@ interface DailyUsage {
 }
 
 interface ConversationState {
-  // User profile
   userProfile: UserProfile | null;
   setProfile: (p: UserProfile) => void;
   updateProfile: (partial: Partial<UserProfile>) => void;
 
-  // Messages (current session)
   messages: Message[];
   addMessage: (msg: Message) => void;
   setMessages: (msgs: Message[]) => void;
   resetMessages: () => void;
 
-  // Conversation history (persisted)
   conversations: StoredConversation[];
   saveConversation: (c: StoredConversation) => void;
-  getRecentMessages: (limit?: number) => Message[];
+  getRecentConversationMessages: (limit?: number) => Message[];
 
-  // Daily usage
   dailyUsage: DailyUsage;
   incrementDaily: () => void;
   canChat: () => boolean;
   getRemainingChats: () => number;
 
-  // Session
   sessionCount: number;
   incrementSession: () => void;
 }
 
-const DAILY_LIMIT = 2;
+export const DAILY_LIMIT = 100;
 
 const getToday = () => new Date().toISOString().slice(0, 10);
 
@@ -74,19 +69,20 @@ export const useConversationStore = create<ConversationState>()(
         })),
 
       messages: [],
-      addMessage: (msg) =>
-        set((s) => ({ messages: [...s.messages, msg] })),
+      addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
       setMessages: (msgs) => set({ messages: msgs }),
       resetMessages: () => set({ messages: [] }),
 
+      // Keep all conversations forever — never delete
       conversations: [],
       saveConversation: (c) =>
         set((s) => ({
-          conversations: [...s.conversations, c].slice(-20),
+          conversations: [...s.conversations, c],
         })),
-      getRecentMessages: (limit = 6) => {
+      getRecentConversationMessages: (limit = 8) => {
         const convos = get().conversations;
         if (!convos.length) return [];
+        // Return last N messages from the most recent saved conversation
         return convos[convos.length - 1].messages.slice(-limit);
       },
 
@@ -119,7 +115,8 @@ export const useConversationStore = create<ConversationState>()(
     }),
     {
       name: "aura-conversation-store",
-      version: 1,
+      version: 2,
+      storage: createJSONStorage(() => localStorage),
     },
   ),
 );

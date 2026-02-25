@@ -51,17 +51,18 @@ Frontend: React, Next.js, Redux, Framer Motion, GSAP, Tailwind
 Cloud: AWS, GitHub Actions, Fastlane, Firebase, Docker, K8s
 
 [RATES]
-FT India ₹1.5–2.5L/mo | FT International $8–12K/mo
-Consulting $150/hr | Fractional CTO ₹1.5–2L per company (15-20hr, 2-3 companies, equity)
-MVP $15–25K/3mo fixed
+FT India Rs 1.5-2.5L/mo | FT International $8-12K/mo
+Consulting $150/hr | Fractional CTO Rs 1.5-2L per company (15-20hr, 2-3 companies, equity)
+MVP $15-25K/3mo fixed
 
 [RULES]
-- Never echo back user's raw words
-- Off-topic: redirect sharply to Amit's work in one sentence
+- Never echo back the user's raw words
+- Off-topic questions: redirect sharply to Amit's work in one sentence
 - End responses with a forward path when relevant
 - No emojis. Ever.
 - Reference visitor context naturally when available
-- Keep responses concise for voice delivery
+- Keep responses concise for voice delivery — under 60 words
+- Always answer. Never say you don't know. Use the facts above.
 `.trim();
 
 serve(async (req) => {
@@ -70,77 +71,154 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, userContext } = await req.json();
+    const body = await req.json();
+    const { messages, userContext } = body;
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) {
+      console.error("GEMINI_API_KEY is not set in Supabase secrets");
+      return new Response(
+        JSON.stringify({ error: "GEMINI_API_KEY not configured" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
-    // Build visitor context
+    // Validate messages array
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return new Response(
+        JSON.stringify({
+          error: "messages array is required and must not be empty",
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    // Build visitor context string
     let visitorCtx = "";
     if (userContext?.name) {
-      visitorCtx = `\n\n[VISITOR CONTEXT]\nName: ${userContext.name} | Company: ${userContext.company || "unknown"} | Role: ${userContext.role || "unknown"} | Intent: ${userContext.intent || "exploring"} | Session #${userContext.sessionCount || 1} | Interests: ${(userContext.interests || []).join(", ") || "none yet"}. Reference their context naturally.`;
+      visitorCtx =
+        `\n\n[VISITOR CONTEXT]\nName: ${userContext.name}` +
+        ` | Company: ${userContext.company || "unknown"}` +
+        ` | Role: ${userContext.role || "unknown"}` +
+        ` | Intent: ${userContext.intent || "exploring"}` +
+        ` | Session #${userContext.sessionCount || 1}` +
+        ` | Interests: ${(userContext.interests || []).join(", ") || "none yet"}.` +
+        ` Reference their context naturally without being awkward about it.`;
     }
 
     const systemPrompt = AMIT_CONTEXT + visitorCtx;
 
+    // Sanitize messages — ensure roles are only "user" or "assistant"
+    const sanitizedMessages = messages
+      .filter(
+        (m: any) =>
+          m?.content && typeof m.content === "string" && m.content.trim(),
+      )
+      .map((m: any) => ({
+        role: m.role === "user" ? "user" : "assistant",
+        content: String(m.content).trim(),
+      }));
+
+    if (sanitizedMessages.length === 0) {
+      return new Response(
+        JSON.stringify({ error: "No valid messages after sanitization" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    const requestBody = {
+      model: "gemini-1.5-flash",
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...sanitizedMessages,
+      ],
+      max_tokens: 400,
+      temperature: 0.75,
+    };
+
+    console.log(`[AuraChat] Calling Gemini with model: ${requestBody.model}`);
+
     const response = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          Authorization: `Bearer ${GEMINI_API_KEY}`,
+          "x-goog-api-key": GEMINI_API_KEY,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          model: "google/gemini-3-flash-preview",
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...messages,
-          ],
-          max_tokens: 200,
-          temperature: 0.82,
-        }),
+        body: JSON.stringify(requestBody),
       },
     );
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Gemini API error ${response.status}:`, errorText);
+
       if (response.status === 429) {
         return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Try again shortly." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          JSON.stringify({ error: "Rate limit hit. Try again in a moment." }),
+          {
+            status: 429,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
         );
       }
       if (response.status === 402) {
         return new Response(
           JSON.stringify({ error: "AI credits exhausted." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          {
+            status: 402,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
         );
       }
-      const t = await response.text();
-      console.error("AI gateway error:", response.status, t);
+
       return new Response(
-        JSON.stringify({ error: "AI gateway error" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        JSON.stringify({ error: `Gemini error ${response.status}` }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
       );
     }
 
     const data = await response.json();
-    const reply =
-      data?.choices?.[0]?.message?.content?.trim() || "Ask about Amit's work.";
+    const reply = data?.choices?.[0]?.message?.content?.trim();
 
-    return new Response(
-      JSON.stringify({ reply }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    if (!reply) {
+      console.error("Empty reply from Gemini. Response:", JSON.stringify(data));
+      return new Response(
+        JSON.stringify({ error: "Empty response from Gemini" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    return new Response(JSON.stringify({ reply }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (e) {
-    console.error("aura-chat error:", e);
+    console.error("aura-chat unhandled error:", e);
     return new Response(
       JSON.stringify({
         error: e instanceof Error ? e.message : "Unknown error",
       }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
     );
   }
 });

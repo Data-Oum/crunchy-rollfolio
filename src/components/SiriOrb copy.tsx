@@ -446,7 +446,7 @@ const PW = 360;
 const PH = 560;
 
 // ═══════════════════════════════════════════════════════════════════════════════
-export const SiriOrb = () => {
+export const SiriOrbPreviousWOrkingOLdButmisisngthings = () => {
   type Phase = "orb" | "morphing" | "chat" | "closing";
   type VoiceState = "idle" | "listening" | "thinking" | "speaking";
 

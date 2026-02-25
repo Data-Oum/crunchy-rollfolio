@@ -3,51 +3,111 @@ import { AnimeNav } from "@/components/AnimeNav";
 import { CinematicOpening } from "@/components/CinematicOpening";
 import { Suspense, lazy, memo, useEffect, useRef, useState } from "react";
 
-const PlasmaCanvas = lazy(() => import("@/components/PlasmaCanvas").then((m) => ({ default: m.PlasmaCanvas })));
-const AnimeShowcase = lazy(() => import("@/components/AnimeShowcase").then((m) => ({ default: m.AnimeShowcase })));
-const AnimeJourney = lazy(() => import("@/components/AnimeJourney").then((m) => ({ default: m.AnimeJourney })));
-const AnimeTestimonials = lazy(() => import("@/components/AnimeTestimonials").then((m) => ({ default: m.AnimeTestimonials })));
-const AnimeServices = lazy(() => import("@/components/AnimeServices").then((m) => ({ default: m.AnimeServices })));
-const AnimeContact = lazy(() => import("@/components/AnimeContact").then((m) => ({ default: m.AnimeContact })));
-const BuyMeCoffee = lazy(() => import("@/components/BuyMeCoffee").then((m) => ({ default: m.BuyMeCoffee })));
-const SiriOrb = lazy(() => import("@/components/SiriOrb").then((m) => ({ default: m.SiriOrb })));
+const PlasmaCanvas = lazy(() =>
+  import("@/components/PlasmaCanvas").then((m) => ({
+    default: m.PlasmaCanvas,
+  })),
+);
+const AnimeShowcase = lazy(() =>
+  import("@/components/AnimeShowcase").then((m) => ({
+    default: m.AnimeShowcase,
+  })),
+);
+const AnimeJourney = lazy(() =>
+  import("@/components/AnimeJourney").then((m) => ({
+    default: m.AnimeJourney,
+  })),
+);
+const AnimeTestimonials = lazy(() =>
+  import("@/components/AnimeTestimonials").then((m) => ({
+    default: m.AnimeTestimonials,
+  })),
+);
+const AnimeServices = lazy(() =>
+  import("@/components/AnimeServices").then((m) => ({
+    default: m.AnimeServices,
+  })),
+);
+const AnimeContact = lazy(() =>
+  import("@/components/AnimeContact").then((m) => ({
+    default: m.AnimeContact,
+  })),
+);
+const BuyMeCoffee = lazy(() =>
+  import("@/components/BuyMeCoffee").then((m) => ({ default: m.BuyMeCoffee })),
+);
+const SiriOrb = lazy(() =>
+  import("@/components/SiriOrb").then((m) => ({ default: m.SiriOrbNew })),
+);
 
 const NullFallback = null;
 
 const SectionFallback = (
-  <div style={{
-    display: "flex", alignItems: "center", justifyContent: "center",
-    height: "100vh", color: "rgba(255,255,255,0.15)",
-    fontSize: 12, fontFamily: "monospace", letterSpacing: "0.15em", textTransform: "uppercase",
-  }}>
-    <span style={{
-      display: "inline-block", width: 5, height: 5, borderRadius: "50%",
-      background: "rgba(244,117,33,0.6)", marginRight: 10,
-      animation: "pulse 1.4s ease-in-out infinite",
-    }} />
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      height: "100vh",
+      color: "rgba(255,255,255,0.15)",
+      fontSize: 12,
+      fontFamily: "monospace",
+      letterSpacing: "0.15em",
+      textTransform: "uppercase",
+    }}
+  >
+    <span
+      style={{
+        display: "inline-block",
+        width: 5,
+        height: 5,
+        borderRadius: "50%",
+        background: "rgba(244,117,33,0.6)",
+        marginRight: 10,
+        animation: "pulse 1.4s ease-in-out infinite",
+      }}
+    />
     読み込み中...
   </div>
 );
 
 const BelowFoldSections = memo(() => (
   <>
-    <Suspense fallback={SectionFallback}><AnimeShowcase /></Suspense>
-    <Suspense fallback={SectionFallback}><AnimeJourney /></Suspense>
-    <Suspense fallback={SectionFallback}><AnimeTestimonials /></Suspense>
-    <Suspense fallback={SectionFallback}><AnimeServices /></Suspense>
-    <Suspense fallback={SectionFallback}><AnimeContact /></Suspense>
+    <Suspense fallback={SectionFallback}>
+      <AnimeShowcase />
+    </Suspense>
+    <Suspense fallback={SectionFallback}>
+      <AnimeJourney />
+    </Suspense>
+    <Suspense fallback={SectionFallback}>
+      <AnimeTestimonials />
+    </Suspense>
+    <Suspense fallback={SectionFallback}>
+      <AnimeServices />
+    </Suspense>
+    <Suspense fallback={SectionFallback}>
+      <AnimeContact />
+    </Suspense>
   </>
 ));
 BelowFoldSections.displayName = "BelowFoldSections";
 
 const SiriOrbMount = memo(() => (
-  <Suspense fallback={NullFallback}><SiriOrb /></Suspense>
+  <Suspense fallback={NullFallback}>
+    <SiriOrb />
+  </Suspense>
 ));
 SiriOrbMount.displayName = "SiriOrbMount";
 
 const Scanlines = memo(() => (
-  <div className="fixed inset-0 pointer-events-none z-[1]" aria-hidden="true"
-    style={{ backgroundImage: "repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.05) 2px,rgba(0,0,0,0.05) 3px)" }} />
+  <div
+    className="fixed inset-0 pointer-events-none z-[1]"
+    aria-hidden="true"
+    style={{
+      backgroundImage:
+        "repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.05) 2px,rgba(0,0,0,0.05) 3px)",
+    }}
+  />
 ));
 Scanlines.displayName = "Scanlines";
 
@@ -58,8 +118,13 @@ function useBelowFoldVisible() {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
     const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) { setVisible(true); observer.disconnect(); } },
-      { rootMargin: "600px" }
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "600px" },
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
@@ -76,7 +141,9 @@ const Index = () => {
 
       <CinematicOpening />
 
-      <Suspense fallback={NullFallback}><PlasmaCanvas /></Suspense>
+      <Suspense fallback={NullFallback}>
+        <PlasmaCanvas />
+      </Suspense>
 
       <Scanlines />
 
@@ -90,7 +157,9 @@ const Index = () => {
 
       <SiriOrbMount />
 
-      <Suspense fallback={NullFallback}><BuyMeCoffee /></Suspense>
+      <Suspense fallback={NullFallback}>
+        <BuyMeCoffee />
+      </Suspense>
     </div>
   );
 };
