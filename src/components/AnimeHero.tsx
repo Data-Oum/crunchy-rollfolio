@@ -1,181 +1,367 @@
-import { motion } from "framer-motion";
-import plasmaOrb from "@/assets/plasma-orb.png";
 import animeAvatar from "@/assets/anime-avatar.png";
+import animeBattle from "@/assets/anime-battle.png";
+import energyBlast from "@/assets/energy-blast.png";
+import plasmaOrb from "@/assets/plasma-orb.png";
 import { PROFILE } from "@/data/profile";
+import { motion, useMotionValue, useTransform } from "framer-motion";
+import { useEffect, useState } from "react";
+
+const GLITCH_CHARS = "アイウエオカキクケコサシスセソタチツテトナニヌネノ";
+
+function GlitchText({ text, className }: { text: string; className?: string }) {
+  const [display, setDisplay] = useState(text);
+  const [glitching, setGlitching] = useState(false);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setGlitching(true);
+      let iter = 0;
+      const glitch = setInterval(() => {
+        setDisplay(
+          text
+            .split("")
+            .map((char, i) =>
+              i < iter
+                ? char
+                : GLITCH_CHARS[Math.floor(Math.random() * GLITCH_CHARS.length)],
+            )
+            .join(""),
+        );
+        if (iter >= text.length) {
+          clearInterval(glitch);
+          setDisplay(text);
+          setGlitching(false);
+        }
+        iter += 1;
+      }, 40);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [text]);
+
+  return <span className={className}>{display}</span>;
+}
+
+function StatCounter({ value, label }: { value: string; label: string }) {
+  return (
+    <motion.div
+      whileHover={{ scale: 1.05 }}
+      className="relative group cursor-default"
+    >
+      <div className="absolute inset-0 bg-primary/10 rounded-lg blur-md group-hover:bg-primary/20 transition-all" />
+      <div className="relative border border-primary/30 rounded-lg px-4 py-3 text-center bg-background/40 backdrop-blur-sm">
+        <div className="text-2xl sm:text-3xl font-black text-primary font-mono leading-none">
+          {value}
+        </div>
+        <div className="text-[10px] text-muted-foreground font-mono tracking-widest mt-1 uppercase">
+          {label}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 export const AnimeHero = () => {
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+  const rotateX = useTransform(mouseY, [-300, 300], [5, -5]);
+  const rotateY = useTransform(mouseX, [-300, 300], [-5, 5]);
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    mouseX.set(e.clientX - rect.left - rect.width / 2);
+    mouseY.set(e.clientY - rect.top - rect.height / 2);
+  };
+
   return (
-    <section id="hero" className="relative min-h-screen flex items-center justify-center overflow-hidden pt-16">
-      {/* Background plasma orb */}
+    <section
+      id="hero"
+      className="relative min-h-screen flex items-center justify-center overflow-hidden pt-16"
+      onMouseMove={handleMouseMove}
+    >
+      {/* Anime city background — deep parallax layer */}
       <motion.div
-        animate={{ scale: [1, 1.05, 1], opacity: [0.3, 0.5, 0.3] }}
+        initial={{ opacity: 0, scale: 1.1 }}
+        animate={{ opacity: 0.12, scale: 1 }}
+        transition={{ duration: 2 }}
+        className="absolute inset-0 pointer-events-none"
+      >
+        <img
+          src={animeBattle}
+          alt=""
+          className="w-full h-full object-cover"
+          style={{ filter: "saturate(1.4) hue-rotate(20deg)" }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/60 via-background/40 to-background" />
+      </motion.div>
+
+      {/* Plasma orb */}
+      <motion.div
+        animate={{ scale: [1, 1.05, 1], opacity: [0.25, 0.4, 0.25] }}
         transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
         className="absolute inset-0 flex items-center justify-center pointer-events-none"
       >
-        <img src={plasmaOrb} alt="" className="w-[600px] md:w-[900px] opacity-40 blur-sm" loading="lazy" />
+        <img
+          src={plasmaOrb}
+          alt=""
+          className="w-[700px] md:w-[1000px] opacity-50 blur-sm"
+        />
       </motion.div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-        <div className="flex flex-col lg:flex-row items-center gap-12 lg:gap-20">
-          {/* Left: Text */}
+      {/* Manga speed lines — top-left corner */}
+      <svg
+        className="absolute top-0 left-0 w-72 h-72 opacity-5 pointer-events-none"
+        viewBox="0 0 200 200"
+      >
+        {[...Array(20)].map((_, i) => (
+          <line
+            key={i}
+            x1="0"
+            y1="0"
+            x2={200 * Math.cos((i * Math.PI) / 10)}
+            y2={200 * Math.sin((i * Math.PI) / 10)}
+            stroke="hsl(var(--primary))"
+            strokeWidth="0.5"
+          />
+        ))}
+      </svg>
+
+      {/* Energy blast decorative */}
+      <motion.img
+        src={energyBlast}
+        alt=""
+        animate={{ opacity: [0.04, 0.09, 0.04], rotate: [0, 5, 0] }}
+        transition={{ duration: 6, repeat: Infinity }}
+        className="absolute right-0 top-1/4 w-64 pointer-events-none select-none"
+        style={{ filter: "hue-rotate(40deg) saturate(2)" }}
+      />
+
+      {/* Main content */}
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        <div className="flex flex-col lg:flex-row items-center gap-12 lg:gap-16">
+          {/* LEFT COLUMN */}
           <div className="flex-1 text-center lg:text-left">
+            {/* Mission badge */}
             <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
+              initial={{ opacity: 0, x: -30 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.7, delay: 0.2 }}
+              className="inline-flex items-center gap-2 mb-6"
             >
-              <span className="inline-block px-3 py-1 rounded-full bg-primary/10 border border-primary/30 text-primary text-xs font-mono tracking-widest mb-6">
-                呪術師 • SOFTWARE ENGINEER
+              <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+              <span className="px-3 py-1 rounded-full border border-primary/40 bg-primary/5 text-primary text-xs font-mono tracking-widest">
+                呪術師 • SOFTWARE ARCHITECT
+              </span>
+              <div className="hidden sm:block w-16 h-px bg-gradient-to-r from-primary/50 to-transparent" />
+            </motion.div>
+
+            {/* NAME — massive, layered */}
+            <motion.div
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.35 }}
+              className="relative mb-2"
+            >
+              {/* Ghost text behind */}
+              <div
+                className="absolute -top-2 left-0 text-6xl sm:text-7xl lg:text-9xl font-black leading-none select-none pointer-events-none tracking-tight"
+                style={{
+                  WebkitTextStroke: "1px hsl(var(--primary) / 0.08)",
+                  color: "transparent",
+                  transform: "translateX(4px) translateY(4px)",
+                }}
+              >
+                {PROFILE.nameFirst.toUpperCase()}
+              </div>
+              <h1 className="text-6xl sm:text-7xl lg:text-9xl font-black leading-none tracking-tight relative">
+                <GlitchText
+                  text={PROFILE.nameFirst.toUpperCase()}
+                  className="text-gradient-crunchy"
+                />
+              </h1>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.8, delay: 0.5 }}
+              className="flex items-baseline gap-3 justify-center lg:justify-start mb-6"
+            >
+              <span className="text-3xl sm:text-4xl lg:text-5xl font-bold text-foreground tracking-wide">
+                {PROFILE.nameLast.toUpperCase()}
+              </span>
+              <span className="hidden sm:block text-primary font-mono text-xs opacity-60 tracking-widest self-end pb-1">
+                チャクラボルティ
               </span>
             </motion.div>
 
-            <motion.h1
-              initial={{ opacity: 0, y: 40 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.4 }}
-              className="text-5xl sm:text-6xl lg:text-8xl font-bold leading-none mb-4"
+            {/* Title + tagline */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.65 }}
+              className="mb-6"
             >
-              <span className="text-gradient-crunchy">{PROFILE.nameFirst.toUpperCase()}</span>
-              <br />
-              <span className="text-foreground text-4xl sm:text-5xl lg:text-6xl">{PROFILE.nameLast.toUpperCase()}</span>
-            </motion.h1>
+              <p className="text-primary font-mono text-sm mb-1 tracking-wider">
+                ▸ {PROFILE.title}
+              </p>
+              <p className="text-muted-foreground text-lg sm:text-xl max-w-lg mx-auto lg:mx-0">
+                {PROFILE.tagline}
+              </p>
+            </motion.div>
 
-            <motion.p
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.5 }}
-              className="text-primary font-mono text-sm mb-2"
-            >
-              {PROFILE.title}
-            </motion.p>
-
-            <motion.p
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.6 }}
-              className="text-muted-foreground text-lg sm:text-xl max-w-lg mb-8 mx-auto lg:mx-0"
-            >
-              {PROFILE.tagline}
-            </motion.p>
-
+            {/* Role badges */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.8 }}
-              className="flex flex-wrap gap-2 justify-center lg:justify-start"
+              transition={{ duration: 0.7, delay: 0.8 }}
+              className="flex flex-wrap gap-2 justify-center lg:justify-start mb-10"
             >
               {PROFILE.roles.map((role, i) => (
                 <motion.span
                   key={role}
-                  whileHover={{ scale: 1.1, y: -2 }}
-                  className="px-3 py-1.5 rounded-lg bg-muted text-muted-foreground text-xs font-mono border border-border hover:border-primary/50 hover:text-primary transition-all cursor-default"
-                  style={{ animationDelay: `${i * 0.1}s` }}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.8 + i * 0.07 }}
+                  whileHover={{ scale: 1.08, y: -3 }}
+                  className="px-3 py-1.5 rounded-lg bg-muted/60 text-muted-foreground text-xs font-mono border border-border hover:border-primary/60 hover:text-primary hover:bg-primary/5 transition-all cursor-default"
                 >
                   {role}
                 </motion.span>
               ))}
             </motion.div>
 
-            {/* Stats */}
+            {/* Stats row */}
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 1.2 }}
-              className="flex gap-8 mt-10 justify-center lg:justify-start"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 1.1 }}
+              className="flex gap-3 justify-center lg:justify-start"
             >
               {PROFILE.stats.map((stat) => (
-                <div key={stat.label} className="text-center">
-                  <div className="text-2xl font-bold text-primary">{stat.value}</div>
-                  <div className="text-xs text-muted-foreground font-mono">{stat.label}</div>
-                </div>
+                <StatCounter
+                  key={stat.label}
+                  value={stat.value}
+                  label={stat.label}
+                />
               ))}
             </motion.div>
           </div>
 
-          {/* Right: Avatar with anime character vibe */}
+          {/* RIGHT COLUMN — Avatar */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
+            initial={{ opacity: 0, scale: 0.85 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1, delay: 0.6 }}
-            className="flex-shrink-0"
+            transition={{ duration: 1, delay: 0.5 }}
+            style={{ rotateX, rotateY, transformStyle: "preserve-3d" }}
+            className="flex-shrink-0 relative"
           >
-            <div className="relative">
-              {/* Orbit rings — anime power aura */}
+            {/* Outer manga panel frame */}
+            <div className="absolute -inset-6 border border-primary/10 rounded-3xl" />
+            <div className="absolute -inset-3 border border-primary/15 rounded-2xl" />
+
+            {/* Orbit rings */}
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 18, repeat: Infinity, ease: "linear" }}
+              className="absolute -inset-5 rounded-full"
+              style={{
+                border: "1px solid transparent",
+                backgroundImage:
+                  "linear-gradient(hsl(var(--background)), hsl(var(--background))), conic-gradient(from 0deg, hsl(var(--primary)/0.4), transparent, hsl(var(--secondary)/0.3), transparent, hsl(var(--primary)/0.4))",
+                backgroundOrigin: "border-box",
+                backgroundClip: "padding-box, border-box",
+                borderRadius: "50%",
+              }}
+            />
+            <motion.div
+              animate={{ rotate: -360 }}
+              transition={{ duration: 28, repeat: Infinity, ease: "linear" }}
+              className="absolute -inset-10 rounded-full border border-dashed border-primary/8"
+            />
+
+            {/* Floating energy orbs */}
+            {[...Array(5)].map((_, i) => (
               <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-                className="absolute -inset-4 rounded-full border border-primary/20"
+                key={i}
+                animate={{
+                  y: [0, -25 - i * 8, 0],
+                  x: [0, i % 2 === 0 ? 15 : -15, 0],
+                  opacity: [0, 1, 0],
+                  scale: [0.5, 1, 0.5],
+                }}
+                transition={{
+                  duration: 2.5 + i * 0.4,
+                  repeat: Infinity,
+                  delay: i * 0.5,
+                }}
+                className="absolute w-2 h-2 rounded-full bg-primary"
+                style={{
+                  top: `${20 + i * 12}%`,
+                  left: `${15 + (i % 3) * 30}%`,
+                  boxShadow: "0 0 8px hsl(var(--primary))",
+                }}
               />
-              <motion.div
-                animate={{ rotate: -360 }}
-                transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
-                className="absolute -inset-8 rounded-full border border-secondary/10"
+            ))}
+
+            {/* Avatar */}
+            <motion.div
+              animate={{ y: [-6, 6, -6] }}
+              transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+              className="w-48 h-48 sm:w-64 sm:h-64 lg:w-80 lg:h-80 rounded-2xl overflow-hidden relative"
+              style={{
+                boxShadow:
+                  "0 0 40px hsl(var(--primary)/0.35), 0 0 80px hsl(var(--primary)/0.15), inset 0 0 30px hsl(var(--primary)/0.05)",
+                border: "1.5px solid hsl(var(--primary)/0.45)",
+              }}
+            >
+              <img
+                src={animeAvatar}
+                alt={PROFILE.name}
+                className="w-full h-full object-cover"
               />
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-                className="absolute -inset-12 rounded-full border border-primary/5"
+              {/* Scan-line overlay */}
+              <div
+                className="absolute inset-0 pointer-events-none opacity-30"
+                style={{
+                  backgroundImage:
+                    "repeating-linear-gradient(0deg, transparent, transparent 2px, hsl(var(--background)/0.15) 2px, hsl(var(--background)/0.15) 4px)",
+                }}
               />
+              {/* Bottom shimmer */}
+              <div className="absolute bottom-0 left-0 right-0 h-1/3 bg-gradient-to-t from-background/60 to-transparent" />
+            </motion.div>
 
-              {/* Energy particles */}
-              {[...Array(6)].map((_, i) => (
-                <motion.div
-                  key={i}
-                  animate={{
-                    y: [0, -20 - i * 10, 0],
-                    x: [0, (i % 2 === 0 ? 10 : -10), 0],
-                    opacity: [0, 0.8, 0],
-                    scale: [0, 1, 0],
-                  }}
-                  transition={{
-                    duration: 2 + i * 0.5,
-                    repeat: Infinity,
-                    delay: i * 0.4,
-                  }}
-                  className="absolute w-1.5 h-1.5 rounded-full bg-primary"
-                  style={{
-                    top: `${30 + Math.random() * 40}%`,
-                    left: `${20 + Math.random() * 60}%`,
-                  }}
-                />
-              ))}
+            {/* Level badge */}
+            <motion.div
+              animate={{ y: [-4, 4, -4] }}
+              transition={{ duration: 3, repeat: Infinity }}
+              className="absolute -bottom-3 -right-3 px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-mono font-bold"
+              style={{ boxShadow: "0 0 20px hsl(var(--primary)/0.5)" }}
+            >
+              LVL ∞ ARCHITECT
+            </motion.div>
 
-              <div className="w-48 h-48 sm:w-64 sm:h-64 lg:w-80 lg:h-80 rounded-full overflow-hidden glow-crunchy border-2 border-primary/40">
-                <img
-                  src={animeAvatar}
-                  alt={PROFILE.name}
-                  className="w-full h-full object-cover plasma-pulse"
-                />
-              </div>
-
-              {/* Power level badge */}
-              <motion.div
-                animate={{ y: [-5, 5, -5] }}
-                transition={{ duration: 3, repeat: Infinity }}
-                className="absolute -bottom-2 -right-2 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-mono font-bold glow-crunchy"
-              >
-                LVL ∞ ARCHITECT
-              </motion.div>
-
-              {/* Anime-style power indicator */}
-              <motion.div
-                animate={{ y: [5, -5, 5] }}
-                transition={{ duration: 4, repeat: Infinity }}
-                className="absolute -top-2 -left-2 px-2 py-1 rounded bg-secondary/90 text-secondary-foreground text-[10px] font-mono font-bold"
-              >
-                呪力 MAX
-              </motion.div>
-            </div>
+            {/* Power tag */}
+            <motion.div
+              animate={{ y: [4, -4, 4] }}
+              transition={{ duration: 4, repeat: Infinity }}
+              className="absolute -top-3 -left-3 px-2 py-1 rounded-lg border border-secondary/50 bg-background/80 backdrop-blur-sm text-[10px] font-mono font-bold text-secondary"
+            >
+              呪力 MAX
+            </motion.div>
           </motion.div>
         </div>
       </div>
 
-      {/* Scroll indicator */}
+      {/* Scroll cue */}
       <motion.div
         animate={{ y: [0, 10, 0] }}
         transition={{ duration: 2, repeat: Infinity }}
-        className="absolute bottom-8 left-1/2 -translate-x-1/2"
+        className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2"
       >
+        <span className="text-[10px] font-mono text-muted-foreground tracking-widest">
+          SCROLL
+        </span>
         <div className="w-6 h-10 rounded-full border-2 border-primary/40 flex justify-center pt-2">
           <motion.div
             animate={{ y: [0, 12, 0], opacity: [1, 0, 1] }}
