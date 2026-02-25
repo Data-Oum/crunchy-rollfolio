@@ -69,8 +69,7 @@ if (
 //  CONSTANTS & CONFIG
 // ═══════════════════════════════════════════════════════════════════════════════
 const GEMINI_KEY =
-  import.meta.env.VITE_GEMINI_API_KEY ||
-  "AIzaSyDrwkfrXSYXn86R-h-QKNQAtkH4v7C8A_Y";
+  process.env.VITE_GEMINI_API_KEY || "AIzaSyDrwkfrXSYXn86R-h-QKNQAtkH4v7C8A_Y";
 
 const GEMINI_CHAT_MODEL = "gemini-2.5-flash";
 const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts";
