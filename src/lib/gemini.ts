@@ -2,17 +2,20 @@
  * src/lib/gemini.ts
  *
  * Gemini chat for Aura.
- * Models: gemini-3-flash-preview (primary) → gemini-2.5-flash (fallback)
+ * Models: gemini-2.5-flash (primary) → gemini-2.0-flash (fallback)
+ *
+ * New: Token usage tracking with beautiful stats export.
+ * New: Language-aware system prompt injection.
  */
 
 import type { Message, UserProfile } from "@/store/useConversationStore";
 import { auraD } from "./diagnostics";
+import type { SupportedLang } from "./fallbackAI";
 import {
   fallbackChat,
   generateOfflineSummary,
   setFallbackContext,
 } from "./fallbackAI";
-
 export const CHAT_MODEL_PRIMARY = "gemini-3-flash-preview";
 export const CHAT_MODEL_FALLBACK = "gemini-2.5-flash";
 
@@ -55,6 +58,109 @@ export function resetOffline(): void {
   auraD.setHealth("geminiApi", "unknown");
   auraD.setHealth("fallbackAI", "standby");
 }
+
+// ─── Token tracking ───────────────────────────────────────────────────────────
+export interface TokenUsageStats {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCalls: number;
+  totalFailures: number;
+  sessionInputTokens: number;
+  sessionOutputTokens: number;
+  sessionCalls: number;
+  estimatedCostUSD: number;
+  lastCallTokens: { input: number; output: number } | null;
+  contextUtilization: number; // 0–1 fraction of context window used this session
+  peakContextTokens: number;
+  avgTokensPerCall: number;
+}
+
+// Gemini 2.5 Flash pricing (per 1M tokens)
+const INPUT_COST_PER_M = 0.075;
+const OUTPUT_COST_PER_M = 0.3;
+const CONTEXT_WINDOW = 1_000_000; // 1M token window
+
+const _tokenStats: TokenUsageStats = {
+  totalInputTokens: 0,
+  totalOutputTokens: 0,
+  totalCalls: 0,
+  totalFailures: 0,
+  sessionInputTokens: 0,
+  sessionOutputTokens: 0,
+  sessionCalls: 0,
+  estimatedCostUSD: 0,
+  lastCallTokens: null,
+  contextUtilization: 0,
+  peakContextTokens: 0,
+  avgTokensPerCall: 0,
+};
+
+export function getTokenStats(): Readonly<TokenUsageStats> {
+  return { ..._tokenStats };
+}
+
+export function resetSessionTokenStats(): void {
+  _tokenStats.sessionInputTokens = 0;
+  _tokenStats.sessionOutputTokens = 0;
+  _tokenStats.sessionCalls = 0;
+  _tokenStats.lastCallTokens = null;
+  _tokenStats.contextUtilization = 0;
+}
+
+function recordTokenUsage(inputTokens: number, outputTokens: number): void {
+  _tokenStats.totalInputTokens += inputTokens;
+  _tokenStats.totalOutputTokens += outputTokens;
+  _tokenStats.totalCalls++;
+  _tokenStats.sessionInputTokens += inputTokens;
+  _tokenStats.sessionOutputTokens += outputTokens;
+  _tokenStats.sessionCalls++;
+  _tokenStats.lastCallTokens = { input: inputTokens, output: outputTokens };
+
+  const inputCost = (inputTokens / 1_000_000) * INPUT_COST_PER_M;
+  const outputCost = (outputTokens / 1_000_000) * OUTPUT_COST_PER_M;
+  _tokenStats.estimatedCostUSD += inputCost + outputCost;
+
+  const sessionTotal =
+    _tokenStats.sessionInputTokens + _tokenStats.sessionOutputTokens;
+  _tokenStats.contextUtilization = Math.min(1, sessionTotal / CONTEXT_WINDOW);
+  _tokenStats.peakContextTokens = Math.max(
+    _tokenStats.peakContextTokens,
+    sessionTotal,
+  );
+
+  if (_tokenStats.totalCalls > 0) {
+    _tokenStats.avgTokensPerCall = Math.round(
+      (_tokenStats.totalInputTokens + _tokenStats.totalOutputTokens) /
+        _tokenStats.totalCalls,
+    );
+  }
+
+  auraD.log(
+    "gemini",
+    "info",
+    `Tokens: in=${inputTokens} out=${outputTokens} | ctx=${Math.round(_tokenStats.contextUtilization * 100)}% | cost=$${_tokenStats.estimatedCostUSD.toFixed(6)}`,
+  );
+}
+
+// ─── Language-specific system prompt additions ────────────────────────────────
+const LANG_INSTRUCTIONS: Record<SupportedLang, string> = {
+  en: "",
+  hi: `
+[LANGUAGE]
+Visitor is using Hindi or Hinglish. Respond in natural Hinglish — Hindi sentence structure with English technical terms.
+Keep React Native, TypeScript, HIPAA, etc. in English. Be casual, confident, like a senior Indian professional.
+Example: "Yeh project HIPAA-compliant hai, aur mediapipe on-device run karta hai — koi cloud dependency nahi."`,
+  ja: `
+[LANGUAGE]
+Visitor is speaking Japanese. Respond in natural, polite but conversational Japanese (丁寧語).
+Keep technical terms as-is or in katakana. Short punchy sentences. No excessive keigo.
+Example: "VitalQuestはゼロから作ったゲームエンジンで動いています。HIPAAに準拠しています。"`,
+  ko: `
+[LANGUAGE]
+Visitor is speaking Korean. Respond in natural Korean using 해요체 (polite informal).
+Keep technical terms in English/mixed Korean. Direct and confident tone.
+Example: "VitalQuest는 처음부터 만든 게임 엔진으로 구동됩니다. HIPAA를 준수합니다."`,
+};
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 const SYSTEM_CORE = `
@@ -122,14 +228,9 @@ Frontend: React, Next.js, Framer Motion, GSAP, Tailwind, Canvas
 [RATES — currently flexible, open to negotiation]
 Freelance: $100–150/hour
 Full-time International: $6–10K/month (negotiable)
-Fractional CTO: ₹1.5–2L/month per company (equity preferred)
+Fractional CTO: negotiable, equity preferred
 MVP Build: $12–25K fixed, 3-month delivery
 CURRENTLY AVAILABLE IMMEDIATELY. Open to trial periods.
-
-[CURRENT STATUS]
-Recently completed role at Synapsis Medical. Currently seeking new opportunities.
-Open to: freelance, contract, full-time remote, fractional CTO, consulting.
-Available immediately. Flexible on terms for the right mission.
 `.trim();
 
 // ─── Instant answers ──────────────────────────────────────────────────────────
@@ -142,12 +243,12 @@ const INSTANTS: Array<{ re: RegExp; answer: string }> = [
   {
     re: /\b(what.?s?\s+(the\s+)?(rate|price|cost|fee|salary)|how\s+much\s+does\s+(he\s+)?charge|amit.?s?\s+(rate|price|fee))\b/i,
     answer:
-      "Freelance at $100 to $150 per hour. Full-time remote $6 to $10K per month. MVPs start at $12K fixed. Currently available and flexible on terms.",
+      "Freelance at $100 to $150 per hour. Full-time remote $6 to $10K per month. MVPs start at $12K fixed. Currently available and flexible.",
   },
   {
     re: /\b(where\s+(is|does)\s+amit|amit.?s?\s+(location|timezone)|is\s+amit\s+in\s+india)\b/i,
     answer:
-      "Kolkata, India. UTC plus 5:30. Fully remote for 6 years. Available immediately.",
+      "Kolkata, India. UTC+5:30. Fully remote for 6 years. Available immediately.",
   },
   {
     re: /\b(is\s+amit\s+(available|looking)|when\s+can\s+amit\s+start)\b/i,
@@ -172,6 +273,8 @@ export async function askAura(
   history: Message[],
   onError?: (e: string | null) => void,
   voiceProfileContext?: string,
+  detectedLang?: SupportedLang,
+  onTokenUpdate?: (stats: TokenUsageStats) => void,
 ): Promise<string> {
   auraD.increment("gemini.requests");
 
@@ -187,9 +290,14 @@ export async function askAura(
     return fallbackChat(msg);
   }
 
+  const langInstruction = LANG_INSTRUCTIONS[detectedLang || "en"];
+
   const visitorCtx = user?.name
     ? `\n[VISITOR]\nName: ${user.name}${user.company ? ` | ${user.company}` : ""}${user.role ? ` | ${user.role}` : ""}${user.intent ? ` | ${user.intent}` : ""} | Session #${user.sessionCount || 1}`
     : "\n[VISITOR]\nNew visitor. Keep accessible. Ask one follow-up.";
+
+  const systemInstruction =
+    SYSTEM_CORE + visitorCtx + (voiceProfileContext || "") + langInstruction;
 
   const contents: GeminiMsg[] = [
     ...history.slice(-10).map((m) => ({
@@ -205,8 +313,7 @@ export async function askAura(
       model: _activeModel,
       contents,
       config: {
-        systemInstruction:
-          SYSTEM_CORE + visitorCtx + (voiceProfileContext || ""),
+        systemInstruction,
         maxOutputTokens: 220,
         temperature: 0.85,
         topP: 0.92,
@@ -219,12 +326,22 @@ export async function askAura(
     auraD.setHealth("fallbackAI", "standby");
     auraD.increment("gemini.successes");
 
+    // Record real token usage from API response
+    const usageMeta = res.usageMetadata;
+    if (usageMeta) {
+      const inputTokens = usageMeta.promptTokenCount || 0;
+      const outputTokens = usageMeta.candidatesTokenCount || 0;
+      recordTokenUsage(inputTokens, outputTokens);
+      onTokenUpdate?.(getTokenStats());
+    }
+
     return (
       res.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
       fallbackForMsg(msg, user)
     );
   } catch (err: unknown) {
     _consecutiveErrors++;
+    _tokenStats.totalFailures++;
     auraD.error("gemini", err, `Chat failed (model: ${_activeModel})`);
     auraD.increment("gemini.failures");
 
@@ -233,7 +350,6 @@ export async function askAura(
         ? err.message.toLowerCase()
         : String(err).toLowerCase();
 
-    // Auth / key errors → offline immediately
     if (
       e.includes("api key") ||
       e.includes("401") ||
@@ -247,7 +363,6 @@ export async function askAura(
       return fallbackForMsg(msg, user);
     }
 
-    // Model not found → switch to fallback model and retry once
     if (
       (e.includes("not found") ||
         e.includes("404") ||
@@ -256,10 +371,17 @@ export async function askAura(
     ) {
       _activeModel = CHAT_MODEL_FALLBACK;
       auraD.log("gemini", "warn", `Switched to ${CHAT_MODEL_FALLBACK}`);
-      return askAura(msg, user, history, onError, voiceProfileContext);
+      return askAura(
+        msg,
+        user,
+        history,
+        onError,
+        voiceProfileContext,
+        detectedLang,
+        onTokenUpdate,
+      );
     }
 
-    // Quota / rate limit
     if (e.includes("quota") || e.includes("429") || e.includes("rate limit")) {
       if (_consecutiveErrors >= 2) {
         _offlineMode = true;
@@ -270,7 +392,6 @@ export async function askAura(
       return fallbackForMsg(msg, user);
     }
 
-    // Network — offline after 3
     if (_consecutiveErrors >= 3) {
       _offlineMode = true;
       auraD.setHealth("geminiApi", "down");
@@ -326,6 +447,15 @@ export async function generateSummary(
       ],
       config: { maxOutputTokens: 50, temperature: 0.3 },
     });
+
+    const usageMeta = res.usageMetadata;
+    if (usageMeta) {
+      recordTokenUsage(
+        usageMeta.promptTokenCount || 0,
+        usageMeta.candidatesTokenCount || 0,
+      );
+    }
+
     return res.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
   } catch {
     return generateOfflineSummary();
