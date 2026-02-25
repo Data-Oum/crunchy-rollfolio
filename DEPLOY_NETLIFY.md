@@ -6,12 +6,8 @@ Follow these steps to deploy your site and ensure the AI (AURA) works in product
 
 You must add these variables to your Netlify dashboard (**Site settings > Environment variables**):
 
-| Key                             | Value (from your .env)                           |
-| :------------------------------ | :----------------------------------------------- |
-| `VITE_SUPABASE_URL`             | `https://wuxfgmpwanictdaaypmq.supabase.co`       |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_HVfG-uleO0pHr4dWNnpphQ_dRbeTuUd` |
-| `VITE_SUPABASE_PROJECT_ID`      | `wuxfgmpwanictdaaypmq`                           |
-| `GEMINI_API_KEY`                | `AIzaSyDrwkfrXSYXn86R-h-QKNQAtkH4v7C8A_Y`        |
+| Key | Value (from your .env) |
+| :-- | :--------------------- |
 
 ## 2. Supabase Cloud Configuration
 
@@ -19,7 +15,7 @@ Ensure your functions are deployed to the **Supabase Cloud** (not just running l
 
 ```bash
 # Set secret for the cloud functions
-npx supabase secrets set GEMINI_API_KEY=AIzaSyDrwkfrXSYXn86R-h-QKNQAtkH4v7C8A_Y
+npx supabase secrets set VITE_GEMINI_KEY=AIzaSyDrwkfrXSYXn86R-h-QKNQAtkH4v7C8A_Y
 
 # Deploy logic to cloud
 npx supabase functions deploy aura-chat --no-verify-jwt

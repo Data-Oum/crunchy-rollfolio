@@ -98,8 +98,8 @@ serve(async (req) => {
 
   try {
     const { messages, userName } = await req.json();
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) throw new Error("API Key missing");
+    const VITE_GEMINI_KEY = Deno.env.get("VITE_GEMINI_KEY");
+    if (!VITE_GEMINI_KEY) throw new Error("API Key missing");
 
     if (!Array.isArray(messages) || messages.length < 2) {
       return new Response(JSON.stringify({ summary: "", audio: "" }), {
@@ -116,7 +116,7 @@ serve(async (req) => {
     const name = userName || "this visitor";
     const prompt = `Conversation:\n${transcript}\n\nSummarize what ${name} needs from Amit in 1 sentence.`;
 
-    const genAI = new GoogleGenAI(GEMINI_API_KEY);
+    const genAI = new GoogleGenAI(VITE_GEMINI_KEY);
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash-preview-tts",
       systemInstruction: SUMMARY_CONTEXT,

@@ -87,10 +87,10 @@ serve(async (req) => {
 
   try {
     const { messages, userContext } = await req.json();
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) throw new Error("API Key missing");
+    const VITE_GEMINI_KEY = Deno.env.get("VITE_GEMINI_KEY");
+    if (!VITE_GEMINI_KEY) throw new Error("API Key missing");
 
-    const genAI = new GoogleGenAI(GEMINI_API_KEY);
+    const genAI = new GoogleGenAI(VITE_GEMINI_KEY);
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash-preview-tts",
       systemInstruction:
