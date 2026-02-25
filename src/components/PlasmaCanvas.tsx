@@ -1,185 +1,311 @@
-import { useEffect, useRef } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { useMemo, useRef, memo, useEffect } from "react";
+import * as THREE from "three";
 
-export const PlasmaCanvas = ({ className = "" }: { className?: string }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animRef = useRef<number>(0);
+// ─── Plasma Particles ────────────────────────────────────────
+const PARTICLE_COUNT = 600;
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+const particleVertexShader = `
+  attribute float aSize;
+  attribute float aPhase;
+  attribute vec3 aColor;
+  uniform float uTime;
+  varying float vAlpha;
+  varying vec3 vColor;
 
-    const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-    resize();
-    window.addEventListener("resize", resize);
+  void main() {
+    vec3 pos = position;
+    float t = uTime * 0.3;
+    
+    // Organic floating motion
+    pos.x += sin(t + aPhase * 6.28) * 0.5;
+    pos.y += cos(t * 0.7 + aPhase * 4.0) * 0.4;
+    pos.z += sin(t * 0.5 + aPhase * 3.0) * 0.3;
+    
+    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+    gl_PointSize = aSize * (200.0 / -mvPosition.z);
+    gl_Position = projectionMatrix * mvPosition;
+    
+    // Pulse alpha
+    vAlpha = 0.3 + 0.5 * sin(t * 2.0 + aPhase * 6.28);
+    vColor = aColor;
+  }
+`;
 
-    type P = {
-      x: number;
-      y: number;
-      vx: number;
-      vy: number;
-      size: number;
-      hue: number;
-      life: number;
-      maxLife: number;
-      type: 0 | 1;
-    };
-    const particles: P[] = [];
+const particleFragmentShader = `
+  varying float vAlpha;
+  varying vec3 vColor;
 
-    const spawn = (type: 0 | 1 = 0) => {
-      // type 0 = slow glow orbs, type 1 = fast micro sparks
-      const big = type === 0;
-      particles.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * (big ? 0.4 : 1.2),
-        vy: (Math.random() - 0.5) * (big ? 0.4 : 1.0),
-        size: big ? Math.random() * 5 + 2 : Math.random() * 1.8 + 0.4,
-        // Crunchyroll orange (28°) or cursed purple (270°) or near-white sparks
-        hue:
-          type === 0
-            ? Math.random() > 0.5
-              ? 28
-              : 270
-            : Math.random() > 0.6
-              ? 28
-              : Math.random() > 0.5
-                ? 270
-                : 55,
-        life: 0,
-        maxLife: big ? Math.random() * 350 + 150 : Math.random() * 130 + 60,
-        type,
-      });
-    };
+  void main() {
+    float dist = length(gl_PointCoord - vec2(0.5));
+    if (dist > 0.5) discard;
+    float glow = 1.0 - dist * 2.0;
+    glow = pow(glow, 2.0);
+    gl_FragColor = vec4(vColor, glow * vAlpha * 0.6);
+  }
+`;
 
-    for (let i = 0; i < 25; i++) spawn(0);
-    for (let i = 0; i < 70; i++) spawn(1);
+function PlasmaParticles() {
+  const meshRef = useRef<THREE.Points>(null);
+  const uniformsRef = useRef({ uTime: { value: 0 } });
 
-    let t = 0;
-    const LINK_DIST = 120;
-    const visible: P[] = [];
+  const { positions, sizes, phases, colors } = useMemo(() => {
+    const p = new Float32Array(PARTICLE_COUNT * 3);
+    const s = new Float32Array(PARTICLE_COUNT);
+    const ph = new Float32Array(PARTICLE_COUNT);
+    const c = new Float32Array(PARTICLE_COUNT * 3);
 
-    const draw = () => {
-      t += 0.007;
+    // Crunchyroll orange: hsl(25, 93%, 54%) → rgb(244, 117, 33)
+    // Cursed purple: hsl(270, 60%, 55%) → rgb(123, 47, 190)
+    const orange = new THREE.Color(0xf47521);
+    const purple = new THREE.Color(0x7b2fbe);
+    const gold = new THREE.Color(0xd4a843);
 
-      // Fade trail
-      ctx.fillStyle = "rgba(5,3,8,0.11)";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const i3 = i * 3;
+      // Spread in a wide field
+      p[i3] = (Math.random() - 0.5) * 12;
+      p[i3 + 1] = (Math.random() - 0.5) * 8;
+      p[i3 + 2] = (Math.random() - 0.5) * 6;
+      s[i] = Math.random() * 3 + 0.5;
+      ph[i] = Math.random();
 
-      // ── Warp grid ─────────────────────────────────────────────
-      const cols = 18,
-        rows = 10;
-      const cw = canvas.width / cols,
-        ch = canvas.height / rows;
-      ctx.lineWidth = 0.5;
-      for (let gx = 0; gx <= cols; gx++) {
-        ctx.beginPath();
-        for (let gy = 0; gy <= rows; gy++) {
-          const bx = gx * cw + Math.sin(t * 0.45 + gy * 0.38) * 9;
-          const by = gy * ch + Math.cos(t * 0.38 + gx * 0.32) * 9;
-          gy === 0 ? ctx.moveTo(bx, by) : ctx.lineTo(bx, by);
-        }
-        ctx.strokeStyle = "hsla(28,80%,55%,0.04)";
-        ctx.stroke();
+      // Color distribution
+      const r = Math.random();
+      const col = r < 0.45 ? orange : r < 0.8 ? purple : gold;
+      c[i3] = col.r;
+      c[i3 + 1] = col.g;
+      c[i3 + 2] = col.b;
+    }
+    return { positions: p, sizes: s, phases: ph, colors: c };
+  }, []);
+
+  useFrame((_, delta) => {
+    uniformsRef.current.uTime.value += delta;
+  });
+
+  return (
+    <points ref={meshRef}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        <bufferAttribute attach="attributes-aSize" args={[sizes, 1]} />
+        <bufferAttribute attach="attributes-aPhase" args={[phases, 1]} />
+        <bufferAttribute attach="attributes-aColor" args={[colors, 3]} />
+      </bufferGeometry>
+      <shaderMaterial
+        vertexShader={particleVertexShader}
+        fragmentShader={particleFragmentShader}
+        uniforms={uniformsRef.current}
+        transparent
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </points>
+  );
+}
+
+// ─── Energy Orbs (large glowing spheres) ─────────────────────
+function EnergyOrb({ position, color, speed = 1 }: { position: [number, number, number]; color: string; speed?: number }) {
+  const ref = useRef<THREE.Mesh>(null);
+  const col = useMemo(() => new THREE.Color(color), [color]);
+
+  useFrame(({ clock }) => {
+    if (!ref.current) return;
+    const t = clock.elapsedTime * speed;
+    ref.current.position.x = position[0] + Math.sin(t * 0.5) * 1.2;
+    ref.current.position.y = position[1] + Math.cos(t * 0.4) * 0.8;
+    ref.current.scale.setScalar(1 + Math.sin(t) * 0.15);
+  });
+
+  return (
+    <mesh ref={ref} position={position}>
+      <sphereGeometry args={[0.4, 16, 16]} />
+      <meshBasicMaterial color={col} transparent opacity={0.08} />
+    </mesh>
+  );
+}
+
+// ─── Warp Grid ───────────────────────────────────────────────
+const gridVertexShader = `
+  uniform float uTime;
+  varying float vAlpha;
+  
+  void main() {
+    vec3 pos = position;
+    pos.z += sin(pos.x * 0.5 + uTime * 0.3) * 0.3;
+    pos.z += cos(pos.y * 0.4 + uTime * 0.2) * 0.2;
+    
+    vec4 mvp = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    gl_Position = mvp;
+    
+    float dist = length(pos.xy) / 8.0;
+    vAlpha = max(0.0, 1.0 - dist) * 0.12;
+  }
+`;
+
+const gridFragmentShader = `
+  varying float vAlpha;
+  void main() {
+    gl_FragColor = vec4(0.96, 0.46, 0.13, vAlpha);
+  }
+`;
+
+function WarpGrid() {
+  const uniformsRef = useRef({ uTime: { value: 0 } });
+
+  useFrame((_, delta) => {
+    uniformsRef.current.uTime.value += delta;
+  });
+
+  const geometry = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    const verts: number[] = [];
+    const size = 14;
+    const divisions = 30;
+    const step = size / divisions;
+
+    // Horizontal lines
+    for (let i = 0; i <= divisions; i++) {
+      const y = -size / 2 + i * step;
+      for (let j = 0; j < divisions; j++) {
+        const x1 = -size / 2 + j * step;
+        const x2 = x1 + step;
+        verts.push(x1, y, 0, x2, y, 0);
       }
-      for (let gy = 0; gy <= rows; gy++) {
-        ctx.beginPath();
-        for (let gx = 0; gx <= cols; gx++) {
-          const bx = gx * cw + Math.sin(t * 0.45 + gy * 0.38) * 9;
-          const by = gy * ch + Math.cos(t * 0.38 + gx * 0.32) * 9;
-          gx === 0 ? ctx.moveTo(bx, by) : ctx.lineTo(bx, by);
-        }
-        ctx.strokeStyle = "hsla(270,60%,55%,0.03)";
-        ctx.stroke();
+    }
+    // Vertical lines
+    for (let i = 0; i <= divisions; i++) {
+      const x = -size / 2 + i * step;
+      for (let j = 0; j < divisions; j++) {
+        const y1 = -size / 2 + j * step;
+        const y2 = y1 + step;
+        verts.push(x, y1, 0, x, y2, 0);
       }
+    }
 
-      // ── Floating orbs (orange + purple) ───────────────────────
-      for (let o = 0; o < 4; o++) {
-        const ox =
-          canvas.width * (0.15 + o * 0.23) + Math.sin(t * 0.55 + o * 1.9) * 110;
-        const oy = canvas.height * 0.48 + Math.cos(t * 0.42 + o * 1.5) * 90;
-        const r = 55 + Math.sin(t + o * 1.2) * 22;
-        const hue = o % 2 === 0 ? 28 : 270;
-        const sat = hue === 28 ? 90 : 65;
-        const grad = ctx.createRadialGradient(ox, oy, 0, ox, oy, r);
-        grad.addColorStop(0, `hsla(${hue},${sat}%,60%,0.14)`);
-        grad.addColorStop(0.5, `hsla(${hue},${sat}%,50%,0.06)`);
-        grad.addColorStop(1, "transparent");
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(ox, oy, r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // ── Particles ─────────────────────────────────────────────
-      visible.length = 0;
-      for (let i = particles.length - 1; i >= 0; i--) {
-        const p = particles[i];
-        p.life++;
-        p.x += p.vx + Math.sin(t + p.y * 0.011) * (p.type === 0 ? 0.28 : 0.55);
-        p.y += p.vy + Math.cos(t + p.x * 0.011) * (p.type === 0 ? 0.22 : 0.45);
-
-        const alpha =
-          Math.sin((p.life / p.maxLife) * Math.PI) * (p.type === 0 ? 0.6 : 0.5);
-        const sat = p.hue === 28 ? 95 : 70;
-        const lgt = p.hue === 55 ? 90 : 60;
-        const color = `hsla(${p.hue},${sat}%,${lgt}%,${alpha})`;
-
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = color;
-        if (p.type === 0) {
-          ctx.shadowBlur = 20;
-          ctx.shadowColor = `hsla(${p.hue},${sat}%,55%,${alpha * 0.8})`;
-        }
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        if (p.life >= p.maxLife) {
-          particles.splice(i, 1);
-          spawn(p.type);
-        } else if (p.type === 0) {
-          visible.push(p);
-        }
-      }
-
-      // ── Connect nearby glow orbs ───────────────────────────────
-      ctx.lineWidth = 0.7;
-      for (let a = 0; a < visible.length; a++) {
-        for (let b = a + 1; b < visible.length; b++) {
-          const dx = visible[a].x - visible[b].x;
-          const dy = visible[a].y - visible[b].y;
-          const d = Math.sqrt(dx * dx + dy * dy);
-          if (d < LINK_DIST) {
-            const lineAlpha = (1 - d / LINK_DIST) * 0.1;
-            ctx.strokeStyle = `hsla(270,60%,60%,${lineAlpha})`;
-            ctx.beginPath();
-            ctx.moveTo(visible[a].x, visible[a].y);
-            ctx.lineTo(visible[b].x, visible[b].y);
-            ctx.stroke();
-          }
-        }
-      }
-
-      animRef.current = requestAnimationFrame(draw);
-    };
-
-    draw();
-    return () => {
-      cancelAnimationFrame(animRef.current);
-      window.removeEventListener("resize", resize);
-    };
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+    return geo;
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className={`fixed inset-0 pointer-events-none ${className}`}
-      style={{ zIndex: 0 }}
-    />
+    <lineSegments geometry={geometry} position={[0, 0, -3]}>
+      <shaderMaterial
+        vertexShader={gridVertexShader}
+        fragmentShader={gridFragmentShader}
+        uniforms={uniformsRef.current}
+        transparent
+        depthWrite={false}
+      />
+    </lineSegments>
   );
-};
+}
+
+// ─── Connection Lines ────────────────────────────────────────
+function ConnectionLines() {
+  const ref = useRef<THREE.LineSegments>(null);
+  const posRef = useRef<Float32Array>();
+
+  const nodes = useMemo(() => {
+    const n: THREE.Vector3[] = [];
+    for (let i = 0; i < 20; i++) {
+      n.push(new THREE.Vector3(
+        (Math.random() - 0.5) * 10,
+        (Math.random() - 0.5) * 6,
+        (Math.random() - 0.5) * 4,
+      ));
+    }
+    return n;
+  }, []);
+
+  useFrame(({ clock }) => {
+    if (!ref.current) return;
+    const t = clock.elapsedTime * 0.3;
+    const verts: number[] = [];
+
+    for (let i = 0; i < nodes.length; i++) {
+      const ni = nodes[i];
+      const px = ni.x + Math.sin(t + i) * 0.5;
+      const py = ni.y + Math.cos(t * 0.7 + i) * 0.3;
+      const pz = ni.z;
+
+      for (let j = i + 1; j < nodes.length; j++) {
+        const nj = nodes[j];
+        const qx = nj.x + Math.sin(t + j) * 0.5;
+        const qy = nj.y + Math.cos(t * 0.7 + j) * 0.3;
+        const dist = Math.sqrt((px - qx) ** 2 + (py - qy) ** 2 + (pz - nj.z) ** 2);
+        if (dist < 3.5) {
+          verts.push(px, py, pz, qx, qy, nj.z);
+        }
+      }
+    }
+
+    const arr = new Float32Array(verts);
+    posRef.current = arr;
+    const geo = ref.current.geometry as THREE.BufferGeometry;
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
+    geo.computeBoundingSphere();
+  });
+
+  return (
+    <lineSegments ref={ref}>
+      <bufferGeometry />
+      <lineBasicMaterial color="#7b2fbe" transparent opacity={0.06} />
+    </lineSegments>
+  );
+}
+
+// ─── Camera Rig (gentle sway) ────────────────────────────────
+function CameraRig() {
+  const { camera } = useThree();
+
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime * 0.15;
+    camera.position.x = Math.sin(t) * 0.5;
+    camera.position.y = Math.cos(t * 0.7) * 0.3;
+    camera.lookAt(0, 0, 0);
+  });
+
+  return null;
+}
+
+// ─── Scene ───────────────────────────────────────────────────
+function Scene() {
+  return (
+    <>
+      <CameraRig />
+      <PlasmaParticles />
+      <WarpGrid />
+      <ConnectionLines />
+
+      {/* Energy orbs */}
+      <EnergyOrb position={[-3, 1, -1]} color="#f47521" speed={0.8} />
+      <EnergyOrb position={[3, -1, -2]} color="#7b2fbe" speed={0.6} />
+      <EnergyOrb position={[0, 2, -1.5]} color="#f47521" speed={1} />
+      <EnergyOrb position={[-2, -2, -1]} color="#7b2fbe" speed={0.9} />
+
+      {/* Ambient light for depth */}
+      <ambientLight intensity={0.1} />
+    </>
+  );
+}
+
+// ─── Canvas Wrapper ──────────────────────────────────────────
+export const PlasmaCanvas = memo(({ className = "" }: { className?: string }) => {
+  return (
+    <div className={`fixed inset-0 pointer-events-none ${className}`} style={{ zIndex: 0 }}>
+      <Canvas
+        camera={{ position: [0, 0, 6], fov: 60 }}
+        gl={{
+          antialias: false,
+          alpha: true,
+          powerPreference: "high-performance",
+        }}
+        dpr={[1, 1.5]}
+        style={{ background: "transparent" }}
+      >
+        <Scene />
+      </Canvas>
+    </div>
+  );
+});
+PlasmaCanvas.displayName = "PlasmaCanvas";
