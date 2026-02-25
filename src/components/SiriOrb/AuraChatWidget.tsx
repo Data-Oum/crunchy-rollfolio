@@ -1,131 +1,148 @@
 /**
  * src/components/SiriOrb/AuraChatWidget.tsx
  *
- * PURE VOICE-ONLY interface with VOICE COMMAND INTERCEPTION.
+ * PURE FLOATING ORB — No full-screen overlays.
  *
- * Voice commands handled BEFORE sending to AI:
- *   "stop" / "pause"   → stopAll() + back to idle
- *   "close" / "bye"    → close() session entirely
- *   "mute"             → disable mic
- *   "unmute"           → re-enable mic
- *   "restart"          → restart listening
- *
- * BUG FIXES applied:
- *   1. stopAll() disables micEnabled so auto-restart can't hijack Stop
- *   2. close() sets isOpen=false immediately (no hanging on generateSummary)
- *   3. open() calls resetOffline() so offline mode never persists
+ * - Draggable anywhere on the screen (60fps).
+ * - Tap to toggle listening/stop.
+ * - Flick/Swipe DOWN on the orb to close it.
+ * - Sleek floating text and icon pill (Lucide).
  */
 
-import { ONBOARD_STEPS, useAuraChat } from "@/hooks/useAuraChat";
+import { useAuraChat } from "@/hooks/useAuraChat";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { useTTS } from "@/hooks/useTTS";
 import { useVoiceProfiler } from "@/hooks/useVoiceProfiler";
 import { useVoiceState } from "@/hooks/useVoiceState";
 import { COMMAND_LABELS, detectVoiceCommand } from "@/lib/voiceCommands";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { Mic, MicOff, Square, X } from "lucide-react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { AuraOrb } from "./AuraOrb";
 
 const API_KEY =
   (import.meta as unknown as { env: Record<string, string> }).env
     .VITE_GEMINI_API_KEY || "";
 
-// ── Glass card ───────────────────────────────────────────────────────────────
-const Glass = memo(
+// ─── Siri-style text display ──────────────────────────────────────────────────
+const FloatingText = memo(
   ({
-    children,
-    className = "",
-    style,
+    text,
+    visible,
+    color = "rgba(255,255,255,0.92)",
+    size = 15,
+    italic = false,
   }: {
-    children: React.ReactNode;
-    className?: string;
-    style?: React.CSSProperties;
+    text: string;
+    visible: boolean;
+    color?: string;
+    size?: number;
+    italic?: boolean;
   }) => (
     <div
-      className={className}
       style={{
-        background: "rgba(12,8,18,0.72)",
-        backdropFilter: "blur(18px) saturate(1.3)",
-        WebkitBackdropFilter: "blur(18px) saturate(1.3)",
-        border: "1px solid rgba(244,117,33,0.12)",
-        borderRadius: 16,
-        ...style,
+        textAlign: "center",
+        width: "100%",
+        opacity: visible ? 1 : 0,
+        transform: visible ? "translateY(0)" : "translateY(8px)",
+        transition: "opacity 0.4s ease, transform 0.4s ease",
+        pointerEvents: "none",
+        marginBottom: 8,
+      }}
+    >
+      <p
+        style={{
+          color,
+          fontSize: size,
+          lineHeight: 1.5,
+          fontFamily:
+            "-apple-system,'SF Pro Text','Inter',system-ui,sans-serif",
+          fontWeight: 500,
+          fontStyle: italic ? "italic" : "normal",
+          margin: 0,
+          textShadow: "0 2px 12px rgba(0,0,0,0.8)",
+          letterSpacing: italic ? 0 : 0.2,
+        }}
+      >
+        {text}
+      </p>
+    </div>
+  ),
+);
+FloatingText.displayName = "FloatingText";
+
+// ─── Minimal icon button ─────────────────────────────────────────────────────
+const IconBtn = memo(
+  ({
+    onClick,
+    title,
+    children,
+    active = false,
+  }: {
+    onClick: (e: React.MouseEvent) => void;
+    title?: string;
+    children: React.ReactNode;
+    active?: boolean;
+  }) => (
+    <button
+      onClick={onClick}
+      title={title}
+      style={{
+        background: active ? "rgba(255,255,255,0.15)" : "transparent",
+        border: "none",
+        cursor: "pointer",
+        padding: 10,
+        borderRadius: "50%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: active ? "#fff" : "rgba(255,255,255,0.6)",
+        transition: "all 0.2s",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.color = "#fff";
+        e.currentTarget.style.background = "rgba(255,255,255,0.1)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.color = active ? "#fff" : "rgba(255,255,255,0.6)";
+        e.currentTarget.style.background = active
+          ? "rgba(255,255,255,0.15)"
+          : "transparent";
       }}
     >
       {children}
-    </div>
+    </button>
   ),
 );
-Glass.displayName = "Glass";
+IconBtn.displayName = "IconBtn";
 
-// ── Command toast ────────────────────────────────────────────────────────────
-// Briefly shows what voice command was recognized
-const CommandToast = memo(
-  ({ label, visible }: { label: string; visible: boolean }) => (
-    <div
-      style={{
-        position: "absolute",
-        top: "20%",
-        left: "50%",
-        transform: "translateX(-50%)",
-        zIndex: 20,
-        pointerEvents: "none",
-        opacity: visible ? 1 : 0,
-        transition: "opacity 0.35s ease",
-      }}
-    >
-      <div
-        style={{
-          background: "rgba(244,117,33,0.15)",
-          border: "1px solid rgba(244,117,33,0.35)",
-          borderRadius: 12,
-          padding: "7px 18px",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        <span style={{ fontSize: 14 }}>⌘</span>
-        <span
-          style={{
-            color: "rgba(244,117,33,0.9)",
-            fontSize: 13,
-            fontWeight: 600,
-            letterSpacing: 0.5,
-          }}
-        >
-          {label}
-        </span>
-      </div>
-    </div>
-  ),
-);
-CommandToast.displayName = "CommandToast";
-
-// ── Main widget ──────────────────────────────────────────────────────────────
+// ─── Main widget ──────────────────────────────────────────────────────────────
 export default function AuraChatWidget() {
   const vs = useVoiceState();
   const profiler = useVoiceProfiler();
+  const [muted, setMuted] = useState(false);
+  const [cmdToast, setCmdToast] = useState("");
+  const [cmdVisible, setCmdVisible] = useState(false);
+  const cmdTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  const showCmd = useCallback((label: string) => {
+    setCmdToast(label);
+    setCmdVisible(true);
+    clearTimeout(cmdTimer.current);
+    cmdTimer.current = setTimeout(() => setCmdVisible(false), 1800);
+  }, []);
 
   const tts = useTTS({
     setVoiceState: vs.setVoiceState,
     autoSpeak: true,
     apiKey: API_KEY,
   });
-
-  // ── Mute state (needed before sr so we can pass toggleMute down) ──────────
-  const [muted, setMuted] = useState(false);
-
-  // ── Command toast state ───────────────────────────────────────────────────
-  const [cmdToast, setCmdToast] = useState("");
-  const [cmdToastVisible, setCmdToastVisible] = useState(false);
-  const toastTimer = useRef<ReturnType<typeof setTimeout>>();
-
-  const showCommandToast = useCallback((label: string) => {
-    setCmdToast(label);
-    setCmdToastVisible(true);
-    clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setCmdToastVisible(false), 1800);
-  }, []);
 
   const chat = useAuraChat({
     setVoiceState: vs.setVoiceState,
@@ -145,654 +162,389 @@ export default function AuraChatWidget() {
     onFinalTranscript: (text) => {
       profiler.trackMessage(text);
       profiler.stopAnalysis();
-
-      // ── VOICE COMMAND INTERCEPTION ────────────────────────────────────────
-      // Check BEFORE sending to AI. Short phrases like "stop", "bye", "mute"
-      // are commands, not messages.
       const cmd = detectVoiceCommand(text);
-
       if (cmd === "close") {
-        showCommandToast(COMMAND_LABELS.close);
+        showCmd(COMMAND_LABELS.close);
         chat.close();
         return;
       }
-
       if (cmd === "stop" || cmd === "pause") {
-        showCommandToast(COMMAND_LABELS.stop);
+        showCmd(COMMAND_LABELS.stop);
         chat.stopAll();
         vs.setVoiceState("idle");
         return;
       }
-
       if (cmd === "mute") {
-        showCommandToast(COMMAND_LABELS.mute);
+        showCmd(COMMAND_LABELS.mute);
         setMuted(true);
         chat.micEnabled.current = false;
         sr.abortListening();
         vs.setVoiceState("idle");
         return;
       }
-
       if (cmd === "unmute") {
-        showCommandToast(COMMAND_LABELS.unmute);
+        showCmd(COMMAND_LABELS.unmute);
         setMuted(false);
         chat.micEnabled.current = true;
-        sr.startListening();
         return;
       }
-
       if (cmd === "restart") {
-        showCommandToast(COMMAND_LABELS.restart);
+        showCmd(COMMAND_LABELS.restart);
         chat.stopAll();
         vs.setVoiceState("idle");
-        // startListening will auto-trigger via the idle effect in useSpeechRecognition
         return;
       }
-      // ─────────────────────────────────────────────────────────────────────
-
-      // Not a command — send to AI normally
       chat.sendMessage(text);
     },
     onInterimTranscript: chat.setTranscript,
     onLanguageDetected: (lang) => profiler.trackMessage("", lang),
   });
 
-  // ── Fade timer for last AI text ────────────────────────────────────────────
+  // AI text fade-out timer
   const [showAiText, setShowAiText] = useState(false);
-  const fadeTimer = useRef<ReturnType<typeof setTimeout>>();
-
+  const aiTextTimer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => {
     if (chat.lastAiText) {
       setShowAiText(true);
-      clearTimeout(fadeTimer.current);
-      fadeTimer.current = setTimeout(() => setShowAiText(false), 14000);
+      clearTimeout(aiTextTimer.current);
+      aiTextTimer.current = setTimeout(() => setShowAiText(false), 12000);
     }
-    return () => clearTimeout(fadeTimer.current);
+    return () => clearTimeout(aiTextTimer.current);
   }, [chat.lastAiText]);
 
-  // ── Orb tap handler ────────────────────────────────────────────────────────
-  const handleOrbTap = useCallback(() => {
-    if (!chat.isOpen) {
-      chat.open();
-      return;
-    }
-    if (vs.canStop) {
-      chat.stopAll();
-      vs.setVoiceState("idle");
-      return;
-    }
-    if (vs.isListening) {
-      sr.stopListening();
-      return;
-    }
-    // idle → start listening
-    profiler.startAnalysis();
-    sr.startListening();
-  }, [chat, vs, sr, profiler]);
+  // ── Unified Hardware Accelerated Drag & Tap Logic ─────────────────────────
+  const [pos, setPos] = useState({ x: -1000, y: -1000 }); // Wait for layout
+  const drag = useRef({
+    active: false,
+    startX: 0,
+    startY: 0,
+    origX: 0,
+    origY: 0,
+    wasDrag: false,
+    startTime: 0,
+  });
 
-  // ── Close handler ──────────────────────────────────────────────────────────
-  const handleClose = useCallback(() => {
-    chat.close();
-  }, [chat]);
-
-  // ── Mute toggle ────────────────────────────────────────────────────────────
-  const toggleMute = useCallback(() => {
-    setMuted((m) => {
-      const next = !m;
-      chat.micEnabled.current = !next;
-      if (next) {
-        sr.abortListening();
-        vs.setVoiceState("idle");
-      }
-      return next;
+  // Init center-bottom position
+  useLayoutEffect(() => {
+    setPos({
+      x: window.innerWidth / 2,
+      y: window.innerHeight - 120,
     });
-  }, [chat.micEnabled, sr, vs]);
-
-  // ── Orb size ───────────────────────────────────────────────────────────────
-  const [orbSize, setOrbSize] = useState(220);
-  useEffect(() => {
-    const calc = () => {
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      const base = Math.min(vw, vh);
-      setOrbSize(Math.max(160, Math.min(280, base * 0.42)));
-    };
-    calc();
-    window.addEventListener("resize", calc);
-    return () => window.removeEventListener("resize", calc);
   }, []);
 
-  // ── Not open: show launcher orb ────────────────────────────────────────────
-  if (!chat.isOpen) {
-    return (
-      <>
-        {/* End card overlay */}
-        {chat.showEndCard && (
-          <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 9999,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "rgba(3,1,8,0.88)",
-            }}
-            onClick={() => chat.setShowEndCard(false)}
-          >
-            <Glass
-              style={{
-                padding: "28px 32px",
-                maxWidth: 360,
-                textAlign: "center",
-              }}
-            >
-              <div style={{ fontSize: 28, marginBottom: 8 }}>🎌</div>
-              <div
-                style={{
-                  color: "rgba(255,255,255,0.9)",
-                  fontSize: 15,
-                  fontWeight: 600,
-                  marginBottom: 10,
-                }}
-              >
-                Session Complete
-              </div>
-              {chat.endSummary && (
-                <div
-                  style={{
-                    color: "rgba(255,255,255,0.55)",
-                    fontSize: 13,
-                    lineHeight: 1.6,
-                    marginBottom: 14,
-                  }}
-                >
-                  {chat.endSummary}
-                </div>
-              )}
-              <div style={{ color: "rgba(244,117,33,0.7)", fontSize: 12 }}>
-                Tap anywhere to dismiss
-              </div>
-            </Glass>
-          </div>
-        )}
+  // Clamp to window on resize
+  useEffect(() => {
+    const onResize = () =>
+      setPos((p) => ({
+        x: Math.max(50, Math.min(p.x, window.innerWidth - 50)),
+        y: Math.max(50, Math.min(p.y, window.innerHeight - 50)),
+      }));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
-        {/* Launcher button */}
-        <div
-          onClick={handleOrbTap}
-          style={{
-            position: "fixed",
-            bottom: 28,
-            right: 28,
-            zIndex: 9990,
-            cursor: "pointer",
-            transition: "transform 0.3s ease",
-          }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.transform = "scale(1.08)")
-          }
-          onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
-          role="button"
-          aria-label="Open Aura voice assistant"
-        >
-          <AuraOrb size={72} mode="idle" />
-          <div
-            style={{
-              position: "absolute",
-              bottom: -6,
-              left: "50%",
-              transform: "translateX(-50%)",
-              background: "rgba(12,8,18,0.8)",
-              borderRadius: 8,
-              padding: "3px 10px",
-              fontSize: 10,
-              color: "rgba(244,117,33,0.8)",
-              whiteSpace: "nowrap",
-              border: "1px solid rgba(244,117,33,0.15)",
-            }}
-          >
-            Tap to talk
-          </div>
-        </div>
-      </>
-    );
-  }
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      // Ignore if clicking a button inside the widget
+      if ((e.target as HTMLElement).closest("button")) return;
 
-  // ── Full-screen voice interface ────────────────────────────────────────────
+      drag.current = {
+        active: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        origX: pos.x,
+        origY: pos.y,
+        wasDrag: false,
+        startTime: Date.now(),
+      };
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    },
+    [pos],
+  );
+
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!drag.current.active) return;
+    const dx = e.clientX - drag.current.startX;
+    const dy = e.clientY - drag.current.startY;
+
+    // Threshold to distinguish tap vs drag
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+      drag.current.wasDrag = true;
+    }
+
+    setPos({
+      x: drag.current.origX + dx,
+      y: drag.current.origY + dy,
+    });
+  }, []);
+
+  const onPointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      if (!drag.current.active) return;
+      drag.current.active = false;
+      e.currentTarget.releasePointerCapture(e.pointerId);
+
+      const dx = e.clientX - drag.current.startX;
+      const dy = e.clientY - drag.current.startY;
+      const dt = Date.now() - drag.current.startTime;
+
+      // Swipe down to close gesture (flick downwards)
+      if (
+        chat.isOpen &&
+        drag.current.wasDrag &&
+        dy > 50 &&
+        dy > Math.abs(dx) &&
+        dt < 400
+      ) {
+        chat.close();
+        // Snap back slightly
+        setPos({ x: drag.current.origX, y: drag.current.origY });
+        return;
+      }
+
+      // Clamp strictly to screen bounds on release
+      setPos((p) => ({
+        x: Math.max(60, Math.min(window.innerWidth - 60, p.x)),
+        y: Math.max(80, Math.min(window.innerHeight - 80, p.y)),
+      }));
+
+      // If it wasn't a drag, it's a tap
+      if (!drag.current.wasDrag) {
+        if (!chat.isOpen) {
+          chat.open();
+        } else if (vs.canStop) {
+          chat.stopAll();
+          vs.setVoiceState("idle");
+        } else if (vs.isListening) {
+          sr.stopListening();
+        } else {
+          profiler.startAnalysis();
+          sr.startListening();
+        }
+      }
+    },
+    [chat, vs, sr, profiler],
+  );
+
+  const toggleMute = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setMuted((m) => {
+        const next = !m;
+        chat.micEnabled.current = !next;
+        if (next) {
+          sr.abortListening();
+          vs.setVoiceState("idle");
+        }
+        return next;
+      });
+    },
+    [chat.micEnabled, sr, vs],
+  );
+
+  if (pos.x < 0) return null; // Wait for mount
+
+  const orbSize = chat.isOpen ? 150 : 72;
+
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 9998,
-        background:
-          "radial-gradient(ellipse at center, rgba(12,6,20,0.97) 0%, rgba(3,1,8,0.99) 100%)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        fontFamily: "'Inter','Noto Sans JP',system-ui,sans-serif",
-        overflow: "hidden",
-        animation: "auraFadeIn 0.4s ease-out",
-      }}
-    >
+    <>
       <style>{`
-        @keyframes auraFadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes auraPulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
-        @keyframes auraSlideUp { from { opacity: 0; transform: translateY(12px) translateX(-50%); } to { opacity: 1; transform: translateY(0) translateX(-50%); } }
-        @keyframes auraBreathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.03); } }
-        @keyframes cmdPop { 0% { opacity:0; transform: translateX(-50%) scale(0.88); } 60% { transform: translateX(-50%) scale(1.04); } 100% { opacity:1; transform: translateX(-50%) scale(1); } }
+        @keyframes auraBreath{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+        @keyframes auraIn{from{opacity:0;transform:translateY(15px) scale(0.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+        @keyframes auraPulse{0%,100%{opacity:0.3; transform:scale(1)}50%{opacity:0.7; transform:scale(1.08)}}
       `}</style>
 
-      {/* ── Command toast ───────────────────────────────────────────────────── */}
-      <CommandToast label={cmdToast} visible={cmdToastVisible} />
-
-      {/* ── Top bar: close + user badge + offline ──────────────────────────── */}
+      {/* Main floating container */}
       <div
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
         style={{
-          position: "absolute",
+          position: "fixed",
           top: 0,
           left: 0,
-          right: 0,
+          transform: `translate3d(${pos.x}px, ${pos.y}px, 0) translate(-50%, -50%)`,
+          zIndex: 9999,
           display: "flex",
+          flexDirection: "column",
           alignItems: "center",
-          justifyContent: "space-between",
-          padding: "16px 20px",
-          zIndex: 10,
+          justifyContent: "center",
+          touchAction: "none",
+          userSelect: "none",
+          cursor: drag.current.active ? "grabbing" : "grab",
         }}
       >
-        {/* User badge */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {chat.userProfile?.name && (
-            <Glass
-              style={{
-                padding: "5px 14px",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                borderRadius: 20,
-              }}
-            >
-              <div
-                style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: "50%",
-                  background: "linear-gradient(135deg, #F47521, #7B2FBE)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: "#fff",
-                }}
-              >
-                {chat.userProfile.name[0]?.toUpperCase()}
-              </div>
-              <span
-                style={{
-                  color: "rgba(255,255,255,0.75)",
-                  fontSize: 13,
-                  fontWeight: 500,
-                }}
-              >
-                {chat.userProfile.name}
-              </span>
-              {chat.userProfile.sessionCount > 1 && (
-                <span style={{ color: "rgba(244,117,33,0.5)", fontSize: 10 }}>
-                  #{chat.userProfile.sessionCount}
-                </span>
-              )}
-            </Glass>
-          )}
-
-          {/* Offline indicator */}
-          {chat.offlineIndicator && (
-            <Glass
-              style={{
-                padding: "4px 12px",
-                borderRadius: 14,
-                borderColor: "rgba(220,40,60,0.25)",
-              }}
-            >
-              <span
-                style={{
-                  color: "rgba(220,40,60,0.8)",
-                  fontSize: 11,
-                  fontWeight: 600,
-                }}
-              >
-                オフライン • Offline
-              </span>
-            </Glass>
-          )}
-        </div>
-
-        {/* Close */}
-        <button
-          onClick={handleClose}
-          style={{
-            background: "rgba(255,255,255,0.06)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: "50%",
-            width: 36,
-            height: 36,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            color: "rgba(255,255,255,0.5)",
-            fontSize: 18,
-            transition: "all 0.2s",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "rgba(255,255,255,0.12)";
-            e.currentTarget.style.color = "rgba(255,255,255,0.8)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "rgba(255,255,255,0.06)";
-            e.currentTarget.style.color = "rgba(255,255,255,0.5)";
-          }}
-          aria-label="Close"
-        >
-          ✕
-        </button>
-      </div>
-
-      {/* ── Last AI response (floating, fades) ─────────────────────────────── */}
-      {showAiText && chat.lastAiText && (
-        <div
-          style={{
-            position: "absolute",
-            top: "12%",
-            left: "50%",
-            transform: "translateX(-50%)",
-            maxWidth: "min(85vw, 480px)",
-            zIndex: 5,
-            animation: "auraSlideUp 0.5s ease-out",
-            transition: "opacity 0.8s ease",
-          }}
-        >
-          <Glass style={{ padding: "16px 22px", textAlign: "center" }}>
-            <div
-              style={{
-                color: "rgba(255,255,255,0.88)",
-                fontSize: 15,
-                lineHeight: 1.7,
-                fontWeight: 400,
-                letterSpacing: 0.2,
-              }}
-            >
-              {chat.lastAiText}
-            </div>
-          </Glass>
-        </div>
-      )}
-
-      {/* ── Orb ────────────────────────────────────────────────────────────── */}
-      <div
-        onClick={handleOrbTap}
-        style={{
-          cursor: "pointer",
-          position: "relative",
-          animation: vs.isIdle
-            ? "auraBreathe 4s ease-in-out infinite"
-            : undefined,
-          transition: "transform 0.3s ease",
-        }}
-        role="button"
-        aria-label={
-          vs.canStop
-            ? "Stop"
-            : vs.isListening
-              ? "Stop listening"
-              : "Tap to speak"
-        }
-      >
-        <AuraOrb size={orbSize} mode={vs.voiceState} />
-
-        {/* Stop overlay */}
-        {vs.canStop && (
+        {/* Floating Text (Appears above the orb) */}
+        {chat.isOpen && (
           <div
             style={{
               position: "absolute",
-              inset: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              bottom: "calc(100% + 20px)",
+              width: "85vw",
+              maxWidth: 320,
               pointerEvents: "none",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
             }}
           >
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 12,
-                background: "rgba(220,40,60,0.2)",
-                border: "2px solid rgba(220,40,60,0.5)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                animation: "auraPulse 1.5s ease-in-out infinite",
-              }}
-            >
-              <div
+            {/* Command toast */}
+            {cmdVisible && (
+              <span
                 style={{
-                  width: 14,
-                  height: 14,
-                  borderRadius: 3,
-                  background: "rgba(220,40,60,0.8)",
+                  color: "#F47521",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  textShadow: "0 1px 8px rgba(0,0,0,0.8)",
+                  marginBottom: 8,
                 }}
+              >
+                {cmdToast}
+              </span>
+            )}
+
+            {/* AI Response */}
+            {chat.lastAiText && (
+              <FloatingText
+                text={chat.lastAiText}
+                visible={showAiText}
+                size={15}
               />
-            </div>
-          </div>
-        )}
-      </div>
+            )}
 
-      {/* ── Status text ────────────────────────────────────────────────────── */}
-      <div
-        style={{
-          marginTop: 20,
-          textAlign: "center",
-          animation: "auraSlideUp 0.4s ease-out",
-        }}
-      >
-        <div
-          style={{
-            color: vs.isIdle
-              ? "rgba(255,255,255,0.35)"
-              : "rgba(244,117,33,0.85)",
-            fontSize: 13,
-            fontWeight: 500,
-            letterSpacing: 1.5,
-            transition: "color 0.3s",
-          }}
-        >
-          {vs.statusText}
-        </div>
+            {/* Live Transcript */}
+            {vs.isListening && chat.transcript && (
+              <FloatingText
+                text={`"${chat.transcript}"`}
+                visible={true}
+                color="rgba(80,210,255,0.85)"
+                size={13}
+                italic
+              />
+            )}
 
-        {/* Voice command hint — shown only when idle and not onboarding */}
-        {vs.isIdle && !chat.isOnboard && (
-          <div
-            style={{
-              marginTop: 6,
-              color: "rgba(255,255,255,0.15)",
-              fontSize: 10,
-              letterSpacing: 1,
-            }}
-          >
-            say "stop" • "close" • "mute" to control
-          </div>
-        )}
-      </div>
-
-      {/* ── Live transcript (during listening) ─────────────────────────────── */}
-      {vs.isListening && chat.transcript && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: "22%",
-            left: "50%",
-            transform: "translateX(-50%)",
-            maxWidth: "min(80vw, 400px)",
-            zIndex: 5,
-            animation: "auraSlideUp 0.3s ease-out",
-          }}
-        >
-          <Glass style={{ padding: "10px 18px", textAlign: "center" }}>
-            <div
+            {/* Status */}
+            <span
               style={{
-                color: "rgba(80,210,255,0.85)",
-                fontSize: 14,
-                fontStyle: "italic",
-                animation: "auraPulse 2s ease-in-out infinite",
+                color: vs.isIdle ? "rgba(255,255,255,0.3)" : "#F47521",
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: 1.5,
+                textTransform: "uppercase",
+                transition: "color 0.3s",
+                marginTop: 4,
               }}
             >
-              "{chat.transcript}"
-            </div>
-          </Glass>
-        </div>
-      )}
+              {vs.statusText}
+            </span>
+          </div>
+        )}
 
-      {/* ── Onboarding progress dots ───────────────────────────────────────── */}
-      {chat.isOnboard && (
+        {/* The Orb */}
         <div
           style={{
-            position: "absolute",
-            bottom: "15%",
-            left: "50%",
-            transform: "translateX(-50%)",
-            display: "flex",
-            gap: 8,
-            zIndex: 5,
+            position: "relative",
+            animation:
+              !chat.isOpen || vs.isIdle
+                ? "auraBreath 4s ease-in-out infinite"
+                : "none",
           }}
         >
-          {ONBOARD_STEPS.map((step, i) => (
+          <AuraOrb size={orbSize} mode={vs.voiceState} />
+
+          {/* Glowing ring when active */}
+          {chat.isOpen && vs.canStop && (
             <div
-              key={step}
               style={{
-                width: 8,
-                height: 8,
+                position: "absolute",
+                inset: -6,
                 borderRadius: "50%",
-                background:
-                  i <= chat.onboardIndex
-                    ? "rgba(244,117,33,0.8)"
-                    : "rgba(255,255,255,0.15)",
-                transition: "all 0.4s ease",
-                transform: i === chat.onboardIndex ? "scale(1.3)" : "scale(1)",
+                border: "2px solid rgba(244,117,33,0.4)",
+                animation: "auraPulse 1.5s ease-in-out infinite",
+                pointerEvents: "none",
               }}
             />
-          ))}
+          )}
+
+          {/* Closed state label */}
+          {!chat.isOpen && (
+            <div
+              style={{
+                position: "absolute",
+                bottom: -20,
+                left: 0,
+                right: 0,
+                textAlign: "center",
+                pointerEvents: "none",
+              }}
+            >
+              <span
+                style={{
+                  color: "rgba(244,117,33,0.7)",
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: 1.5,
+                  textShadow: "0 2px 8px rgba(0,0,0,0.8)",
+                }}
+              >
+                AURA
+              </span>
+            </div>
+          )}
         </div>
-      )}
 
-      {/* ── Bottom controls: mute + stop ───────────────────────────────────── */}
-      <div
-        style={{
-          position: "absolute",
-          bottom: 28,
-          left: "50%",
-          transform: "translateX(-50%)",
-          display: "flex",
-          gap: 16,
-          zIndex: 10,
-        }}
-      >
-        {/* Mute */}
-        <button
-          onClick={toggleMute}
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: "50%",
-            background: muted
-              ? "rgba(220,40,60,0.15)"
-              : "rgba(255,255,255,0.06)",
-            border: `1px solid ${muted ? "rgba(220,40,60,0.3)" : "rgba(255,255,255,0.1)"}`,
-            color: muted ? "rgba(220,40,60,0.8)" : "rgba(255,255,255,0.5)",
-            cursor: "pointer",
-            fontSize: 18,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            transition: "all 0.2s",
-          }}
-          aria-label={muted ? "Unmute" : "Mute"}
-        >
-          {muted ? "🔇" : "🎙"}
-        </button>
-
-        {/* Stop (only when active) */}
-        {vs.canStop && (
-          <button
-            onClick={() => {
-              chat.stopAll();
-              vs.setVoiceState("idle");
-            }}
+        {/* Controls Dock (Appears below the orb) */}
+        {chat.isOpen && (
+          <div
             style={{
-              width: 44,
-              height: 44,
-              borderRadius: "50%",
-              background: "rgba(220,40,60,0.15)",
-              border: "1px solid rgba(220,40,60,0.3)",
-              color: "rgba(220,40,60,0.8)",
-              cursor: "pointer",
-              fontSize: 16,
+              position: "absolute",
+              top: "calc(100% + 20px)",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              transition: "all 0.2s",
+              gap: 8,
+              background: "rgba(15,10,25,0.75)",
+              backdropFilter: "blur(16px)",
+              padding: "6px 12px",
+              borderRadius: 99,
+              border: "1px solid rgba(255,255,255,0.08)",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+              animation: "auraIn 0.3s cubic-bezier(0.2,0,0,1)",
+              pointerEvents: "auto", // Allow clicks on buttons
             }}
-            aria-label="Stop"
           >
-            ■
-          </button>
+            <IconBtn
+              onClick={toggleMute}
+              title={muted ? "Unmute" : "Mute"}
+              active={!muted}
+            >
+              {muted ? <MicOff size={18} /> : <Mic size={18} />}
+            </IconBtn>
+
+            {vs.canStop && (
+              <IconBtn
+                onClick={(e) => {
+                  e.stopPropagation();
+                  chat.stopAll();
+                  vs.setVoiceState("idle");
+                }}
+                title="Stop"
+              >
+                <Square size={16} fill="currentColor" color="#ef4444" />
+              </IconBtn>
+            )}
+
+            <IconBtn
+              onClick={(e) => {
+                e.stopPropagation();
+                chat.close();
+              }}
+              title="Close"
+            >
+              <X size={20} />
+            </IconBtn>
+          </div>
         )}
       </div>
-
-      {/* ── API error indicator ────────────────────────────────────────────── */}
-      {chat.apiError && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: 80,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 10,
-          }}
-        >
-          <Glass
-            style={{
-              padding: "6px 14px",
-              borderRadius: 12,
-              borderColor: "rgba(255,200,80,0.2)",
-            }}
-          >
-            <span style={{ color: "rgba(255,200,80,0.7)", fontSize: 11 }}>
-              {chat.apiError}
-            </span>
-          </Glass>
-        </div>
-      )}
-
-      {/* ── Remaining chats ────────────────────────────────────────────────── */}
-      {!chat.isOnboard && chat.convoLeft <= 10 && (
-        <div
-          style={{
-            position: "absolute",
-            top: "50%",
-            right: 16,
-            transform: "translateY(-50%)",
-            zIndex: 5,
-          }}
-        >
-          <Glass style={{ padding: "6px 10px", borderRadius: 10 }}>
-            <span style={{ color: "rgba(255,200,80,0.6)", fontSize: 10 }}>
-              {chat.convoLeft} left today
-            </span>
-          </Glass>
-        </div>
-      )}
-    </div>
+    </>
   );
 }

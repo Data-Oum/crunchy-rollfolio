@@ -1,13 +1,12 @@
 /**
  * src/hooks/useAuraChat.ts
  *
- * VOICE-ONLY Aura business logic. NO text input anywhere.
- * Tap orb → speak → Aura responds → auto-listen again.
+ * VOICE-ONLY Aura business logic.
  *
  * FIXES:
- *   1. stopAll() now blocks auto-restart via micEnabled.current = false
- *   2. close() sets isOpen=false FIRST before any async work (no hanging UI)
- *   3. open() calls resetOffline() so offline mode never persists across sessions
+ *   1. stopAll() blocks auto-restart via micEnabled.current = false (re-enables after 1.2s)
+ *   2. close() sets isOpen=false FIRST, then runs summary async in background
+ *   3. open() calls resetOffline() — offline mode never persists across sessions
  */
 
 import {
@@ -32,7 +31,7 @@ import {
   detectInstantAnswer,
   generateSummary,
   isOffline,
-  resetOffline, // ← FIX 3: import resetOffline
+  resetOffline,
 } from "@/lib/gemini";
 import { selectVoice, type VoiceConfig } from "@/lib/tts";
 import {
@@ -77,7 +76,7 @@ export function useAuraChat({
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [transcript, setTranscript] = useState("");
-  const [autoSpeak, setAutoSpeak] = useState(true);
+  const [autoSpeak] = useState(true);
   const [onboardStep, setOnboardStep] = useState<OnboardStep>("welcome");
   const [showEndCard, setShowEndCard] = useState(false);
   const [endSummary, setEndSummary] = useState("");
@@ -91,6 +90,7 @@ export function useAuraChat({
   const sessionCounted = useRef(false);
   const convoId = useRef(`c_${Date.now()}`);
   const sendRef = useRef<(t: string) => void>(() => {});
+  const stopCooldown = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
     isLoadingRef.current = isLoading;
@@ -98,6 +98,7 @@ export function useAuraChat({
   useEffect(() => {
     stepRef.current = onboardStep;
   }, [onboardStep]);
+
   useEffect(() => {
     const check = () => setOfflineIndicator(isOffline());
     check();
@@ -111,8 +112,9 @@ export function useAuraChat({
 
   const isOnboard = onboardStep !== "ready";
   const convoLeft = getRemaining();
-  const limitHit = !canChat();
-  const onboardIndex = ONBOARD_STEPS.indexOf(onboardStep);
+  const onboardIndex = ONBOARD_STEPS.indexOf(
+    onboardStep as (typeof ONBOARD_STEPS)[number],
+  );
 
   // ── OPEN ───────────────────────────────────────────────────────────────────
   const open = useCallback(() => {
@@ -121,7 +123,7 @@ export function useAuraChat({
     sessionCounted.current = false;
     convoId.current = `c_${Date.now()}`;
     resetFallbackContext();
-    resetOffline(); // ← FIX 3: clear offline mode on every new session
+    resetOffline(); // FIX 3: clear sticky offline mode on every new session
     auraD.log("system", "info", "Session opened");
 
     setTimeout(() => {
@@ -157,26 +159,27 @@ export function useAuraChat({
   }, [speak, getStore]);
 
   // ── CLOSE ──────────────────────────────────────────────────────────────────
-  // FIX 2: Close UI immediately — don't await generateSummary before setIsOpen(false)
+  // FIX 2: Close UI immediately — don't block on generateSummary
   const close = useCallback(async () => {
     micEnabled.current = false;
+    clearTimeout(stopCooldown.current);
     abortListening();
     stopTTS();
     setVoiceState("idle");
 
-    // ← FIX 2: Close UI FIRST so widget disappears instantly
+    // UI closes FIRST
     setIsOpen(false);
     setTranscript("");
     setLastAiText("");
     setOnboardStep("welcome");
+    setIsLoading(false);
     sessionCounted.current = false;
-
-    // Summary + persistence runs in background after UI is already gone
-    const s = getStore();
-    const msgs = s.messages;
-    resetMessages();
-
     auraD.log("system", "info", "Session closed");
+
+    // Summary + persistence runs in background
+    const s = getStore();
+    const msgs = [...s.messages];
+    resetMessages();
 
     if (msgs.length > 2) {
       try {
@@ -186,11 +189,13 @@ export function useAuraChat({
         s.saveConversation?.({
           id: convoId.current,
           date: new Date().toISOString(),
-          messages: [...msgs],
+          messages: msgs,
           summary: sum,
         });
-        if (s.userProfile)
+
+        if (s.userProfile) {
           s.updateProfile({ interests: extractInterests(msgs) });
+        }
 
         saveFullSession({
           visitorName: s.userProfile?.name,
@@ -213,20 +218,21 @@ export function useAuraChat({
   }, [getStore, resetMessages, stopTTS, abortListening, setVoiceState]);
 
   // ── STOP ALL ───────────────────────────────────────────────────────────────
-  // FIX 1: Disable mic BEFORE stopping so auto-restart effect can't re-trigger.
-  //        Re-enable after 1.2s so the next manual tap still works.
+  // FIX 1: Disable mic to block auto-restart, re-enable after cooldown
   const stopAll = useCallback(() => {
-    micEnabled.current = false; // ← FIX 1: block the auto-restart guard
+    micEnabled.current = false; // block auto-restart guard in useSpeechRecognition
+    clearTimeout(stopCooldown.current);
     stopTTS();
     abortListening();
     setIsLoading(false);
-    // Re-arm mic after cooldown so user can tap orb again
-    setTimeout(() => {
+
+    // Re-arm mic so next manual tap still works
+    stopCooldown.current = setTimeout(() => {
       micEnabled.current = true;
     }, 1200);
   }, [stopTTS, abortListening]);
 
-  // ── SEND MESSAGE (voice-only, no text input) ──────────────────────────────
+  // ── SEND MESSAGE ───────────────────────────────────────────────────────────
   const sendMessage = useCallback(
     async (rawText: string) => {
       const msg = rawText.trim();
@@ -235,7 +241,7 @@ export function useAuraChat({
 
       const s = getStore();
 
-      // Daily limit
+      // Daily limit check
       if (!sessionCounted.current) {
         if (!s.canChat()) {
           const limitMsg =
@@ -332,7 +338,7 @@ export function useAuraChat({
         });
       }
 
-      // Zero-latency instant
+      // Zero-latency instant answers
       const instant = detectInstantAnswer(msg);
       if (instant) {
         addMessage({ role: "user", text: msg, ts: Date.now() });
@@ -344,7 +350,7 @@ export function useAuraChat({
         return;
       }
 
-      // Full chat (Gemini or fallback)
+      // Full Gemini call (with fallback)
       const historySnap = [...s.messages];
       addMessage({ role: "user", text: msg, ts: Date.now() });
       setIsLoading(true);
@@ -402,7 +408,6 @@ export function useAuraChat({
     transcript,
     setTranscript,
     autoSpeak,
-    setAutoSpeak,
     onboardStep,
     isOnboard,
     onboardIndex,
@@ -416,7 +421,7 @@ export function useAuraChat({
     messages,
     userProfile,
     convoLeft,
-    limitHit,
+    limitHit: !canChat(),
     open,
     close,
     stopAll,

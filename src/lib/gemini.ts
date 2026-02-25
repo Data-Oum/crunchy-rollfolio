@@ -1,15 +1,20 @@
 /**
  * src/lib/gemini.ts
  *
- * Gemini chat for Aura. Updated: unemployed, open to freelance, adjusted rates.
- * Falls back to local fallbackAI when API is unavailable.
+ * Gemini chat for Aura.
+ * Models: gemini-3-flash-preview (primary) → gemini-2.5-flash (fallback)
  */
 
 import type { Message, UserProfile } from "@/store/useConversationStore";
 import { auraD } from "./diagnostics";
-import { fallbackChat, setFallbackContext } from "./fallbackAI";
+import {
+  fallbackChat,
+  generateOfflineSummary,
+  setFallbackContext,
+} from "./fallbackAI";
 
-export const CHAT_MODEL = "gemini-2.5-flash";
+export const CHAT_MODEL_PRIMARY = "gemini-3-flash-preview";
+export const CHAT_MODEL_FALLBACK = "gemini-2.5-flash";
 
 let _ai: import("@google/genai").GoogleGenAI | null = null;
 let _apiKeyUsed = "";
@@ -22,7 +27,7 @@ async function getAI(apiKey?: string) {
     "";
   if (!key) {
     auraD.setHealth("geminiApi", "down");
-    throw new Error("No API key");
+    throw new Error("No API key — set VITE_GEMINI_API_KEY");
   }
   if (!_ai || _apiKeyUsed !== key) {
     const { GoogleGenAI } = await import("@google/genai");
@@ -32,21 +37,26 @@ async function getAI(apiKey?: string) {
   return _ai;
 }
 
+// ─── Offline state ────────────────────────────────────────────────────────────
 let _offlineMode = false;
 let _consecutiveErrors = 0;
+let _activeModel = CHAT_MODEL_PRIMARY;
 
 export function isOffline(): boolean {
   return _offlineMode || !navigator.onLine;
 }
 export function forceOffline(val: boolean): void {
   _offlineMode = val;
-  auraD.log("gemini", "info", `Offline: ${val}`);
 }
 export function resetOffline(): void {
   _offlineMode = false;
   _consecutiveErrors = 0;
+  _activeModel = CHAT_MODEL_PRIMARY;
+  auraD.setHealth("geminiApi", "unknown");
+  auraD.setHealth("fallbackAI", "standby");
 }
 
+// ─── System prompt ────────────────────────────────────────────────────────────
 const SYSTEM_CORE = `
 [WHO YOU ARE]
 You are AURA — Amit Chakraborty's personal AI on his portfolio site.
@@ -114,44 +124,35 @@ Freelance: $100–150/hour
 Full-time International: $6–10K/month (negotiable)
 Fractional CTO: ₹1.5–2L/month per company (equity preferred)
 MVP Build: $12–25K fixed, 3-month delivery
-Contract: Flexible, project-based
 CURRENTLY AVAILABLE IMMEDIATELY. Open to trial periods.
 
-[CURRENT STATUS — be transparent]
+[CURRENT STATUS]
 Recently completed role at Synapsis Medical. Currently seeking new opportunities.
 Open to: freelance, contract, full-time remote, fractional CTO, consulting.
 Available immediately. Flexible on terms for the right mission.
-Not just looking for a job — looking for impactful work where ownership matters.
-
-[FOLLOW-UPS — weave naturally]
-After projects: "What matters most — the AI side, mobile depth, or team building?"
-After tech: "Evaluating for a specific role, or exploring?"
-After contact: "Should Amit reach out directly, or start with email?"
-After rates: "What engagement model — freelance, full-time, or project?"
-After availability: "When do you need someone to start? Amit can begin immediately."
 `.trim();
 
-// ── Instant answers (zero latency) ───────────────────────────────────────────
+// ─── Instant answers ──────────────────────────────────────────────────────────
 const INSTANTS: Array<{ re: RegExp; answer: string }> = [
   {
-    re: /\b(contact|email|reach|linkedin|github|connect|phone|call)\b/i,
+    re: /\b(how\s+to\s+(contact|reach|email)\s+amit|amit.?s?\s+(email|phone|linkedin|github)|contact\s+info|get\s+in\s+touch)\b/i,
     answer:
-      "Email: amit98ch@gmail.com. LinkedIn: linkedin.com/in/devamitch. GitHub: github.com/devamitch. Phone: +91-9874173663. Available immediately. Usually responds within hours.",
+      "Email: amit98ch@gmail.com. LinkedIn: linkedin.com/in/devamitch. GitHub: github.com/devamitch. Phone: +91-9874173663. Usually responds within hours.",
   },
   {
-    re: /\b(rate|salary|cost|charge|fee|compensation|pay|pricing)\b/i,
+    re: /\b(what.?s?\s+(the\s+)?(rate|price|cost|fee|salary)|how\s+much\s+does\s+(he\s+)?charge|amit.?s?\s+(rate|price|fee))\b/i,
     answer:
-      "Freelance at $100 to $150 per hour. Full-time remote, $6 to $10K per month. MVPs start at $12K for 3-month delivery. Currently available and flexible on terms. What model works for you?",
+      "Freelance at $100 to $150 per hour. Full-time remote $6 to $10K per month. MVPs start at $12K fixed. Currently available and flexible on terms.",
   },
   {
-    re: /\b(where|location|based|remote|timezone|india|kolkata)\b/i,
+    re: /\b(where\s+(is|does)\s+amit|amit.?s?\s+(location|timezone)|is\s+amit\s+in\s+india)\b/i,
     answer:
-      "Kolkata, India. UTC plus 5:30. Fully remote for 6 years. Timezone flexible. Available immediately.",
+      "Kolkata, India. UTC plus 5:30. Fully remote for 6 years. Available immediately.",
   },
   {
-    re: /\b(available|looking|unemployed|hire|open|status|current)\b/i,
+    re: /\b(is\s+amit\s+(available|looking)|when\s+can\s+amit\s+start)\b/i,
     answer:
-      "Currently available and actively looking. Open to freelance, contract, full-time remote, or fractional CTO. Can start immediately. What do you need?",
+      "Currently available and actively looking. Open to freelance, contract, full-time remote, or fractional CTO. Can start immediately.",
   },
 ];
 
@@ -162,7 +163,7 @@ export function detectInstantAnswer(msg: string): string | null {
   return null;
 }
 
-// ── Main chat ────────────────────────────────────────────────────────────────
+// ─── Main chat ────────────────────────────────────────────────────────────────
 type GeminiMsg = { role: "user" | "model"; parts: { text: string }[] };
 
 export async function askAura(
@@ -174,22 +175,21 @@ export async function askAura(
 ): Promise<string> {
   auraD.increment("gemini.requests");
 
-  // Instant check first
   const instant = detectInstantAnswer(msg);
-  if (instant) return instant;
+  if (instant) {
+    onError?.(null);
+    return instant;
+  }
 
-  // Offline → fallback AI
   if (isOffline()) {
-    auraD.log("gemini", "info", "Offline — using fallback AI");
     auraD.setHealth("fallbackAI", "active");
-    auraD.increment("gemini.offline_hits");
     syncFallbackContext(user);
     return fallbackChat(msg);
   }
 
   const visitorCtx = user?.name
-    ? `\n[CURRENT VISITOR]\nName: ${user.name}${user.company ? ` | Company: ${user.company}` : ""}${user.role ? ` | Role: ${user.role}` : ""}${user.intent ? ` | Intent: ${user.intent}` : ""} | Session #${user.sessionCount || 1}\nUse name naturally. Tailor to role.`
-    : "\n[CURRENT VISITOR]\nNew visitor. Keep accessible. Ask one follow-up.";
+    ? `\n[VISITOR]\nName: ${user.name}${user.company ? ` | ${user.company}` : ""}${user.role ? ` | ${user.role}` : ""}${user.intent ? ` | ${user.intent}` : ""} | Session #${user.sessionCount || 1}`
+    : "\n[VISITOR]\nNew visitor. Keep accessible. Ask one follow-up.";
 
   const contents: GeminiMsg[] = [
     ...history.slice(-10).map((m) => ({
@@ -202,7 +202,7 @@ export async function askAura(
   try {
     const ai = await getAI();
     const res = await ai.models.generateContent({
-      model: CHAT_MODEL,
+      model: _activeModel,
       contents,
       config: {
         systemInstruction:
@@ -212,35 +212,70 @@ export async function askAura(
         topP: 0.92,
       },
     });
+
     _consecutiveErrors = 0;
     onError?.(null);
     auraD.setHealth("geminiApi", "ok");
     auraD.setHealth("fallbackAI", "standby");
     auraD.increment("gemini.successes");
+
     return (
       res.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
       fallbackForMsg(msg, user)
     );
   } catch (err: unknown) {
     _consecutiveErrors++;
-    auraD.error("gemini", err, "Chat failed");
+    auraD.error("gemini", err, `Chat failed (model: ${_activeModel})`);
     auraD.increment("gemini.failures");
 
-    const errMsg = err instanceof Error ? err.message.toLowerCase() : "";
+    const e =
+      err instanceof Error
+        ? err.message.toLowerCase()
+        : String(err).toLowerCase();
+
+    // Auth / key errors → offline immediately
     if (
-      _consecutiveErrors >= 3 ||
-      errMsg.includes("quota") ||
-      errMsg.includes("429") ||
-      errMsg.includes("api key") ||
-      errMsg.includes("401") ||
-      errMsg.includes("403")
+      e.includes("api key") ||
+      e.includes("401") ||
+      e.includes("403") ||
+      e.includes("not authorized")
     ) {
       _offlineMode = true;
       auraD.setHealth("geminiApi", "down");
       auraD.setHealth("fallbackAI", "active");
-      onError?.("Switched to offline mode.");
-    } else {
-      onError?.("Connection issue. Trying cached answer.");
+      onError?.("API key issue.");
+      return fallbackForMsg(msg, user);
+    }
+
+    // Model not found → switch to fallback model and retry once
+    if (
+      (e.includes("not found") ||
+        e.includes("404") ||
+        e.includes("not supported")) &&
+      _activeModel !== CHAT_MODEL_FALLBACK
+    ) {
+      _activeModel = CHAT_MODEL_FALLBACK;
+      auraD.log("gemini", "warn", `Switched to ${CHAT_MODEL_FALLBACK}`);
+      return askAura(msg, user, history, onError, voiceProfileContext);
+    }
+
+    // Quota / rate limit
+    if (e.includes("quota") || e.includes("429") || e.includes("rate limit")) {
+      if (_consecutiveErrors >= 2) {
+        _offlineMode = true;
+        auraD.setHealth("geminiApi", "down");
+        auraD.setHealth("fallbackAI", "active");
+        onError?.("Quota reached.");
+      }
+      return fallbackForMsg(msg, user);
+    }
+
+    // Network — offline after 3
+    if (_consecutiveErrors >= 3) {
+      _offlineMode = true;
+      auraD.setHealth("geminiApi", "down");
+      auraD.setHealth("fallbackAI", "active");
+      onError?.("Connection lost.");
     }
 
     return fallbackForMsg(msg, user);
@@ -268,24 +303,23 @@ export async function generateSummary(
   msgs: Message[],
 ): Promise<string> {
   if (msgs.length < 3) return "";
-  if (isOffline()) {
-    const { generateOfflineSummary } = await import("./fallbackAI");
-    return generateOfflineSummary();
-  }
+  if (isOffline()) return generateOfflineSummary();
+
   try {
     const ai = await getAI();
     const snippet = msgs
       .slice(-8)
       .map((m) => `${m.role === "user" ? "Visitor" : "Aura"}: ${m.text}`)
       .join("\n");
+
     const res = await ai.models.generateContent({
-      model: CHAT_MODEL,
+      model: _activeModel,
       contents: [
         {
           role: "user",
           parts: [
             {
-              text: `${snippet}\n\nIn one sentence under 20 words: what does ${user?.name || "this visitor"} need from Amit?`,
+              text: `${snippet}\n\nOne sentence under 20 words: what does ${user?.name || "this visitor"} need from Amit?`,
             },
           ],
         },
@@ -294,6 +328,6 @@ export async function generateSummary(
     });
     return res.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
   } catch {
-    return "";
+    return generateOfflineSummary();
   }
 }
