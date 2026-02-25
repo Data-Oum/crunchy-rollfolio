@@ -1,0 +1,7 @@
+project_id = "wuxfgmpwanictdaaypmq"
+
+[functions.aura-chat]
+verify_jwt = false
+
+[functions.aura-summary]
+verify_jwt = false
