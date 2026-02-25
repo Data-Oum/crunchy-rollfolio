@@ -15,7 +15,7 @@ Ensure your functions are deployed to the **Supabase Cloud** (not just running l
 
 ```bash
 # Set secret for the cloud functions
-npx supabase secrets set VITE_GEMINI_KEY=AIzaSyDrwkfrXSYXn86R-h-QKNQAtkH4v7C8A_Y
+npx supabase secrets set GEMINI_KEY=AIzaSyDrwkfrXSYXn86R-h-QKNQAtkH4v7C8A_Y
 
 # Deploy logic to cloud
 npx supabase functions deploy aura-chat --no-verify-jwt
@@ -42,5 +42,5 @@ If AURA doesn't respond on the live site:
 
 1.  Open Chrome DevTools (**F12**) > **Console**.
 2.  Look for `[Aura] Invoke Error`.
-3.  Ensure your `VITE_SUPABASE_URL` in Netlify matches the one in your dashboard.
+3.  Ensure your `SUPABASE_URL` in Netlify matches the one in your dashboard.
 4.  Check **Supabase Logs** (Edge Functions > aura-chat > Logs) to see if Gemini is returning an error.

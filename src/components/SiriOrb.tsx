@@ -68,7 +68,7 @@ if (
 // ═══════════════════════════════════════════════════════════════════════════════
 //  CONSTANTS & CONFIG
 // ═══════════════════════════════════════════════════════════════════════════════
-const GEMINI_KEY = process.env.VITE_GEMINI_KEY;
+const GEMINI_KEY = process.env.GEMINI_KEY;
 
 const GEMINI_CHAT_MODEL = "gemini-2.5-flash";
 const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts";
