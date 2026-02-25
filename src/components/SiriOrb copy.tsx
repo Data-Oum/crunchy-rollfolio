@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 //  Google Gemini Free — no credit card, $0 forever
 //  Get key: https://aistudio.google.com/app/apikey (sign in with Google, 10 sec)
 // ═══════════════════════════════════════════════════════════════════════════════
-const GEMINI_KEY = process.env.GEMINI_KEY;
+const GEMINI_KEY = (import.meta as unknown as { env: Record<string, string> })
+  .env.GEMINI_KEY;
 const GEMINI_MODEL = "gemini-2.5-flash";
 
 const SYSTEM = `You are Amit Chakraborty's AI hype-man on his portfolio.

@@ -37,7 +37,9 @@ const BuyMeCoffee = lazy(() =>
   import("@/components/BuyMeCoffee").then((m) => ({ default: m.BuyMeCoffee })),
 );
 const SiriOrb = lazy(() =>
-  import("@/components/SiriOrb").then((m) => ({ default: m.SiriOrbNew })),
+  import("@/components/SiriOrb/AuraChatWidget").then((m) => ({
+    default: m.SiriOrbNew,
+  })),
 );
 
 const NullFallback = null;
@@ -156,6 +158,7 @@ const Index = () => {
       </main>
 
       <SiriOrbMount />
+      {/* <PlasmaOrb size={120} mode={"idle"} /> */}
 
       <Suspense fallback={NullFallback}>
         <BuyMeCoffee />
