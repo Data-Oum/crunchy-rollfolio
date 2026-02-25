@@ -1512,7 +1512,7 @@ export const SiriOrb = () => {
           totalMessages: 0,
           interests: [],
         };
-        let nextStep = step;
+        let nextStep: OnboardStep = step;
         let reply = "";
 
         if (step === "ask_name") {
