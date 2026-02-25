@@ -63,6 +63,71 @@ if (
   s.textContent = GLOBAL_CSS;
   document.head.appendChild(s);
 }
+//  CONSTANTS & CONFIG
+// ═══════════════════════════════════════════════════════════════════════════════
+const GEMINI_KEY =
+  import.meta.env.VITE_GEMINI_API_KEY ||
+  "AIzaSyDrwkfrXSYXn86R-h-QKNQAtkH4v7C8A_Y";
+const GEMINI_MODEL = "gemini-1.5-flash";
+
+const AMIT_CONTEXT = `
+[PERSONA]
+You are AURA — the AI voice ambassador for Amit Chakraborty. Speak AS Amit in 1st person. Confident, warm, founder-mindset. Anime mentor energy — the kind who has already seen the outcome and speaks with absolute certainty.
+
+NEVER say: "Certainly", "Of course", "Absolutely", "As an AI". Never start a reply with "I".
+For returning users: end replies with "Try asking: [follow-up suggestion]"
+
+SPEAKING STYLE: Sharp. Declarative. Under 60 words. Every sentence earns its place. No filler. No hollow affirmations. Facts hit like precision strikes. Add natural pauses with commas and periods for better TTS delivery.
+
+[WHO]
+Amit Chakraborty, 31, Bengali, Kolkata India. Remote worldwide. IST UTC+5:30.
+amit98ch@gmail.com | +91-9874173663 | linkedin.com/in/devamitch | github.com/devamitch | x.com/devamitch
+8 years | 18+ apps | 50K+ users | Sole provider for 12-person family
+Roles: Principal Mobile Architect, Founding Engineer, 0-to-1 Builder, Fractional CTO, VP Engineering
+Tagline: "Eight years. Eighteen apps. No shortcuts."
+Promise: "Every system I architect ships to production. I own outcomes, not just code."
+
+[JOB 1] Synapsis Medical Technologies | Jan 2025–Feb 2026 | Edmonton Canada Remote | Principal Mobile Architect
+- Custom React Native game engine from scratch (C++/Swift/Kotlin, zero external libs, XP system, LLM task gen)
+- HIPAA RAG pipelines (99.9% uptime, patient triage, clinical workflow)
+- MediaPipe computer vision (retina analysis, blink/luminance detection, on-device medical-grade)
+- AWS CI/CD (K8s, Docker, auto-scale, CloudWatch)
+- Built and led 21-person team from zero
+- Apps: VitalQuest, LunaCare, Eye Care, Nexus, Maskwa
+
+[JOB 2] NonceBlox Pvt Ltd | Oct 2021–Jan 2025 | Dubai Remote | Lead Mobile Architect | 3yr 4mo
+- 13 apps (7 iOS, 6 Android), 50K+ users, 100K+ transactions, 60fps all
+- Vulcan Eleven: fantasy sports, 50K users, Razorpay + Binance Pay
+- MusicX: music competition, C++ audio modules
+- DeFi11: 100% on-chain Ethereum, smart contracts, NFTs
+- Housezy: PropTech, GraphQL, subscription billing
+
+[JOB 3] TechProMind & WebSkitters | May 2017–Oct 2021 | Kolkata | Senior Full-Stack | 4+ years
+- 13+ government projects secured, SQL injection/XSS hardened
+- GST Ecosystem from scratch, 40% efficiency gain
+
+[SKILLS]
+Mobile: React Native 98%, TypeScript 96%, iOS/Android 95%, Expo, Reanimated, Native Modules C++/Swift/Kotlin
+AI/ML: RAG Pipelines, Agentic AI, LLM Integration, Computer Vision (MediaPipe), TensorFlow
+Web3: Solidity, Ethereum, Web3.js/Ethers.js, Smart Contracts, DeFi, NFTs
+Backend: NestJS, Node.js, PostgreSQL, MongoDB, Docker, Kubernetes, GraphQL
+Frontend: React, Next.js, Redux, Framer Motion, GSAP, Tailwind
+Cloud: AWS, GitHub Actions, Fastlane, Firebase, Docker, K8s
+
+[RATES]
+FT India Rs 1.5-2.5L/mo | FT International $8-12K/mo
+Consulting $150/hr | Fractional CTO Rs 1.5-2L per company (15-20hr, 2-3 companies, equity)
+MVP $15-25K/3mo fixed
+
+[RULES]
+- Never echo back the user's raw words
+- Off-topic questions: redirect sharply to Amit's work in one sentence
+- End responses with a forward path when relevant
+- No emojis. Ever.
+- Reference visitor context naturally when available
+- Keep responses concise for voice delivery — under 60 words
+- Always answer. Never say you don't know. Use the facts above.
+`.trim();
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  TYPES
@@ -261,6 +326,72 @@ const toNaturalSpeech = (text: string): string =>
 //  AI CALLS via Supabase Edge Functions
 // ═══════════════════════════════════════════════════════════════════════════════
 
+interface GeminiMsg {
+  role: "user" | "model";
+  parts: { text: string }[];
+}
+
+const callGeminiDirect = async (
+  msg: string,
+  user: UserProfile | null,
+  history: Message[],
+): Promise<string> => {
+  console.log("🟡 Falling back to DIRECT Gemini API call...");
+  if (!GEMINI_KEY) return "";
+
+  // Set up system prompt
+  let visitorCtx = "";
+  if (user?.name) {
+    visitorCtx = `\n\n[VISITOR CONTEXT]\nName: ${user.name} | Company: ${user.company || "unknown"} | Role: ${user.role || "unknown"} | Intent: ${user.intent || "exploring"} | Session #${user.sessionCount || 1} | Interests: ${(user.interests || []).join(", ") || "none yet"}.`;
+  }
+  const systemPrompt = AMIT_CONTEXT + visitorCtx;
+
+  // Convert history to Gemini format
+  const contents: GeminiMsg[] = history.slice(-6).map((m) => ({
+    role: m.role === "user" ? "user" : "model",
+    parts: [{ text: m.text }],
+  }));
+  contents.push({ role: "user", parts: [{ text: msg }] });
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents,
+          generationConfig: { maxOutputTokens: 240, temperature: 0.75 },
+          safetySettings: [
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+            {
+              category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+              threshold: "BLOCK_NONE",
+            },
+            {
+              category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+              threshold: "BLOCK_NONE",
+            },
+          ],
+        }),
+      },
+    );
+
+    if (!res.ok) {
+      console.error("❌ Direct Gemini error:", res.status, await res.text());
+      return "";
+    }
+
+    const d = await res.json();
+    return d?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+  } catch (err) {
+    console.error("❌ Direct Gemini Exception:", err);
+    return "";
+  }
+};
+
 /**
  * FIX: `historyBeforeCurrentMsg` must NOT include the current user message.
  * We capture history BEFORE addMessage(), then askAura appends msg itself.
@@ -269,8 +400,8 @@ const askAura = async (
   msg: string,
   user: UserProfile | null,
   historyBeforeCurrentMsg: Message[],
+  setError?: (err: string | null) => void,
 ): Promise<string> => {
-  // Build conversation history excluding the current user message
   const apiMessages = [
     ...historyBeforeCurrentMsg.slice(-10).map((m) => ({
       role: m.role === "user" ? ("user" as const) : ("assistant" as const),
@@ -279,35 +410,101 @@ const askAura = async (
     { role: "user" as const, content: msg },
   ];
 
-  console.log(`[Aura] Calling Edge Function: aura-chat...`);
-  const { data, error } = await supabase.functions.invoke("aura-chat", {
-    body: {
-      messages: apiMessages,
-      userContext: user
-        ? {
-            name: user.name,
-            company: user.company,
-            role: user.role,
-            intent: user.intent,
-            sessionCount: user.sessionCount,
-            interests: user.interests,
-          }
-        : null,
-    },
-  });
+  console.group("🤖 Aura API Call Details");
+  const MAX_RETRIES = 1;
+  let attempt = 0;
+  let lastErrorMsg = "";
 
-  if (error) {
-    console.error("[Aura] Invoke Error:", error);
-    return localFallback(msg);
+  while (attempt <= MAX_RETRIES) {
+    if (attempt > 0) {
+      console.log(
+        `🔄 Retrying Supabase call (attempt ${attempt + 1}/${MAX_RETRIES + 1})...`,
+      );
+      setError?.("Waking up AURA...");
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+    try {
+      const { data, error } = await supabase.functions.invoke("aura-chat", {
+        body: {
+          messages: apiMessages,
+          userContext: user
+            ? {
+                name: user.name,
+                company: user.company,
+                role: user.role,
+                intent: user.intent,
+                sessionCount: user.sessionCount,
+                interests: user.interests,
+              }
+            : null,
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (error) {
+        lastErrorMsg = error.message;
+        console.warn(`⚠️ Supabase Attempt ${attempt + 1} Error:`, lastErrorMsg);
+        if (attempt < MAX_RETRIES) {
+          attempt++;
+          continue;
+        }
+        break; // Max retries hit
+      }
+
+      if (!data || data.error) {
+        lastErrorMsg = data?.error || "Empty response";
+        console.warn(
+          `⚠️ API Attempt ${attempt + 1} Logical Error:`,
+          lastErrorMsg,
+        );
+        if (attempt < MAX_RETRIES) {
+          attempt++;
+          continue;
+        }
+        break;
+      }
+
+      console.log("✅ API Success. Response:", data.reply);
+      console.groupEnd();
+      setError?.(null);
+      return data.reply;
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err.name === "AbortError") {
+        lastErrorMsg = "Timeout (30s)";
+        console.warn(`⚠️ Supabase Attempt ${attempt + 1} TIMEOUT`);
+      } else {
+        lastErrorMsg = err.message || "Unknown exception";
+        console.warn(`⚠️ Supabase Attempt ${attempt + 1} Exception:`, err);
+      }
+
+      if (attempt < MAX_RETRIES) {
+        attempt++;
+        continue;
+      }
+      break;
+    }
   }
 
-  if (!data || data.error) {
-    console.error("[Aura] API returned error:", data?.error || "Empty data");
-    return localFallback(msg);
+  // If we reach here, Supabase failed all attempts
+  console.warn(
+    "🟡 Supabase failed after retry. Falling back to DIRECT Gemini API...",
+  );
+  const direct = await callGeminiDirect(msg, user, historyBeforeCurrentMsg);
+  if (direct) {
+    console.groupEnd();
+    setError?.(null);
+    return direct;
   }
 
-  console.log("[Aura] API Result:", data.reply);
-  return data.reply;
+  console.groupEnd();
+  setError?.(`Stability Issue: ${lastErrorMsg.slice(0, 20)}`);
+  return localFallback(msg);
 };
 
 const generateSummary = async (
@@ -315,19 +512,53 @@ const generateSummary = async (
   msgs: Message[],
 ): Promise<string> => {
   if (msgs.length < 2) return "";
-  try {
-    console.log("[Aura] Generating summary...");
-    const { data } = await supabase.functions.invoke("aura-summary", {
-      body: {
-        messages: msgs.map((m) => ({ role: m.role, text: m.text })),
-        userName: user?.name || "this visitor",
-      },
-    });
-    return data?.summary || "";
-  } catch (err) {
-    console.error("[Aura] Summary failed:", err);
-    return "";
+
+  const MAX_RETRIES = 1;
+  let attempt = 0;
+
+  while (attempt <= MAX_RETRIES) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+    try {
+      console.log(`[Aura] Generating summary (attempt ${attempt + 1})...`);
+      const { data, error } = await supabase.functions.invoke("aura-summary", {
+        body: {
+          messages: msgs.map((m) => ({ role: m.role, text: m.text })),
+          userName: user?.name || "this visitor",
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (error || !data) {
+        console.warn(
+          `⚠️ Summary Attempt ${attempt + 1} failed:`,
+          error?.message || "No data",
+        );
+        if (attempt < MAX_RETRIES) {
+          attempt++;
+          continue;
+        }
+        return "";
+      }
+
+      return data?.summary || "";
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      console.error(
+        `⚠️ Summary Attempt ${attempt + 1} exception:`,
+        err.message || err,
+      );
+      if (attempt < MAX_RETRIES) {
+        attempt++;
+        continue;
+      }
+      return "";
+    }
   }
+  return "";
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1112,6 +1343,7 @@ export const SiriOrbNew = () => {
   const [showEndScreen, setShowEndScreen] = useState(false);
   const [endSummary, setEndSummary] = useState("");
   const [profileLoaded, setProfileLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const { mp, springTo } = useSpring();
 
@@ -1407,7 +1639,12 @@ export const SiriOrbNew = () => {
 
       try {
         // Pass historySnapshot (WITHOUT current msg) — askAura appends msg itself
-        const reply = await askAura(msg, s.userProfile, historySnapshot);
+        const reply = await askAura(
+          msg,
+          s.userProfile,
+          historySnapshot,
+          setError,
+        );
         getStore().addMessage({ role: "ai", text: reply, ts: Date.now() });
         speak(reply);
       } catch (err) {
@@ -1424,8 +1661,10 @@ export const SiriOrbNew = () => {
   );
 
   // ── Voice recognition ─────────────────────────────────────────────────────────
-  const SR = (window.SpeechRecognition ||
-    (window as any).webkitSpeechRecognition) as any;
+  const SR =
+    typeof window !== "undefined"
+      ? window.SpeechRecognition || (window as any).webkitSpeechRecognition
+      : null;
   const canVoice = !!SR;
 
   const startListening = useCallback(() => {
@@ -1435,15 +1674,15 @@ export const SiriOrbNew = () => {
     setVoiceState("listening");
     setTranscript("");
 
-    const r = new SR();
+    const r = new (SR as any)();
     recogRef.current = r;
     r.continuous = false;
     r.interimResults = true;
     r.lang = "en-US";
 
     r.onresult = (e: any) => {
-      const t = Array.from(e.results as ArrayLike<any>)
-        .map((res: any) => res[0].transcript)
+      const t = Array.from(e.results)
+        .map((res: SpeechRecognitionResult) => res[0].transcript)
         .join("");
       setTranscript(t);
       if (e.results[e.results.length - 1].isFinal) {
@@ -1459,7 +1698,7 @@ export const SiriOrbNew = () => {
       setVoiceState((v) => (v === "listening" ? "idle" : v));
     };
     r.start();
-  }, [canVoice, sendMessage]);
+  }, [canVoice, sendMessage, SR]);
 
   const stopListening = useCallback(() => {
     recogRef.current?.stop();
@@ -1729,8 +1968,9 @@ export const SiriOrbNew = () => {
                         fontWeight: 600,
                         letterSpacing: ".08em",
                         textTransform: "uppercase",
-                        color:
-                          voiceState !== "idle"
+                        color: error
+                          ? "#ef4444"
+                          : voiceState !== "idle"
                             ? "#F47521"
                             : "rgba(244,117,33,.4)",
                         animation:
@@ -1739,13 +1979,15 @@ export const SiriOrbNew = () => {
                             : "none",
                       }}
                     >
-                      {voiceState === "listening"
-                        ? "Listening"
-                        : voiceState === "thinking"
-                          ? "Thinking"
-                          : voiceState === "speaking"
-                            ? "Speaking"
-                            : "Ready"}
+                      {error
+                        ? error
+                        : voiceState === "listening"
+                          ? "Listening"
+                          : voiceState === "thinking"
+                            ? "Thinking"
+                            : voiceState === "speaking"
+                              ? "Speaking"
+                              : "Ready"}
                     </div>
                   </div>
                 </div>
@@ -2307,7 +2549,10 @@ export const SiriOrbNew = () => {
                         type="text"
                         placeholder={inputPlaceholder}
                         value={inputText}
-                        onChange={(e) => setInputText(e.target.value)}
+                        onChange={(e) => {
+                          setInputText(e.target.value);
+                          if (error) setError(null);
+                        }}
                         onKeyDown={handleKeyDown}
                         disabled={isLoading}
                         style={{

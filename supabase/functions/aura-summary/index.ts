@@ -7,18 +7,36 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  console.log(`[AuraSummary] Incoming request: ${req.method} ${req.url}`);
+
   if (req.method === "OPTIONS") {
+    console.log("[AuraSummary] OPTIONS preflight");
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const body = await req.json();
-    const { messages, userName } = body;
+    const bodyText = await req.text();
+    console.log(`[AuraSummary] Body length: ${bodyText.length}`);
 
+    let body;
+    try {
+      body = JSON.parse(bodyText);
+    } catch (e) {
+      console.error("[AuraSummary] JSON Parse Error:", e);
+      return new Response(JSON.stringify({ summary: "" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { messages, userName } = body;
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    console.log(`[AuraSummary] Secret present: ${!!GEMINI_API_KEY}`);
+
     if (!GEMINI_API_KEY) {
-      console.error("GEMINI_API_KEY is not set in Supabase secrets");
-      // Return empty summary gracefully — don't crash the close flow
+      console.error(
+        "[AuraSummary] GEMINI_API_KEY is missing from Supabase secrets",
+      );
       return new Response(JSON.stringify({ summary: "" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -26,12 +44,13 @@ serve(async (req) => {
 
     // Validate messages
     if (!Array.isArray(messages) || messages.length < 2) {
+      console.log("[AuraSummary] Not enough history for summary");
       return new Response(JSON.stringify({ summary: "" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Build clean transcript — only user + ai messages
+    // Build clean transcript
     const transcript = messages
       .filter((m: any) => m?.text && typeof m.text === "string")
       .map(
@@ -56,44 +75,57 @@ serve(async (req) => {
       `In under 35 words, write 1-2 sharp sentences: what ${name} likely needs from Amit ` +
       `and why Amit is the right person for it. No emojis. Declarative tone. No preamble.`;
 
-    console.log("Calling Gemini API (summary) with model: gemini-1.5-flash");
-
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${GEMINI_API_KEY}`,
-          "x-goog-api-key": GEMINI_API_KEY,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gemini-1.5-flash",
-          messages: [{ role: "user", content: prompt }],
-          max_tokens: 120,
-          temperature: 0.7,
-        }),
+    const nativeRequestBody = {
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        maxOutputTokens: 120,
+        temperature: 0.7,
       },
-    );
+    };
+
+    console.log(`[AuraSummary] Calling Gemini Native (1.5-flash)`);
+
+    let response: Response;
+    try {
+      response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(nativeRequestBody),
+        },
+      );
+    } catch (fetchError) {
+      console.error(
+        "[AuraSummary] Network error calling Gemini Native:",
+        fetchError,
+      );
+      return new Response(JSON.stringify({ summary: "" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`aura-summary Gemini error ${response.status}:`, errorText);
-      // Return empty gracefully — summary is non-critical
+      console.error(
+        `[AuraSummary] Gemini Native API error ${response.status}:`,
+        errorText,
+      );
       return new Response(JSON.stringify({ summary: "" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const data = await response.json();
-    const summary = data?.choices?.[0]?.message?.content?.trim() || "";
+    const summary =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
 
+    console.log("[AuraSummary] Summary generated successfully");
     return new Response(JSON.stringify({ summary }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("aura-summary unhandled error:", e);
-    // Always return valid JSON — never crash the close/save flow
+    console.error("[AuraSummary] FATAL ERROR:", e);
     return new Response(JSON.stringify({ summary: "" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
