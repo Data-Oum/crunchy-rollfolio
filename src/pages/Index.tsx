@@ -40,7 +40,7 @@ const BuyMeCoffee = lazy(() =>
 );
 const SiriOrb = lazy(() =>
   import("@/components/SiriOrb/AuraChatWidget").then((m) => ({
-    default: m.SiriOrbNew,
+    default: m.default,
   })),
 );
 

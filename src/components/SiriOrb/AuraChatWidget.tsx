@@ -1,19 +1,19 @@
 /**
  * src/components/SiriOrb/AuraChatWidget.tsx
  *
- * PURE VOICE-ONLY interface. Zero text inputs. Zero chat panels.
- * Just the plasma orb + floating glass UI elements.
+ * PURE VOICE-ONLY interface with VOICE COMMAND INTERCEPTION.
  *
- * Layout:
- *   - Fullscreen dark backdrop
- *   - Centered plasma orb (tap to speak)
- *   - Floating: last AI response (fades after 14s)
- *   - Floating: live transcript (during listening)
- *   - Status bar: kanji + mode + offline indicator
- *   - Minimal controls: mute, stop, close
- *   - Onboarding progress dots
- *   - User badge (after onboarding)
- *   - End card (session summary)
+ * Voice commands handled BEFORE sending to AI:
+ *   "stop" / "pause"   → stopAll() + back to idle
+ *   "close" / "bye"    → close() session entirely
+ *   "mute"             → disable mic
+ *   "unmute"           → re-enable mic
+ *   "restart"          → restart listening
+ *
+ * BUG FIXES applied:
+ *   1. stopAll() disables micEnabled so auto-restart can't hijack Stop
+ *   2. close() sets isOpen=false immediately (no hanging on generateSummary)
+ *   3. open() calls resetOffline() so offline mode never persists
  */
 
 import { ONBOARD_STEPS, useAuraChat } from "@/hooks/useAuraChat";
@@ -21,6 +21,7 @@ import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { useTTS } from "@/hooks/useTTS";
 import { useVoiceProfiler } from "@/hooks/useVoiceProfiler";
 import { useVoiceState } from "@/hooks/useVoiceState";
+import { COMMAND_LABELS, detectVoiceCommand } from "@/lib/voiceCommands";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { AuraOrb } from "./AuraOrb";
 
@@ -28,7 +29,7 @@ const API_KEY =
   (import.meta as unknown as { env: Record<string, string> }).env
     .VITE_GEMINI_API_KEY || "";
 
-// ── Glass card component ─────────────────────────────────────────────────────
+// ── Glass card ───────────────────────────────────────────────────────────────
 const Glass = memo(
   ({
     children,
@@ -56,6 +57,50 @@ const Glass = memo(
 );
 Glass.displayName = "Glass";
 
+// ── Command toast ────────────────────────────────────────────────────────────
+// Briefly shows what voice command was recognized
+const CommandToast = memo(
+  ({ label, visible }: { label: string; visible: boolean }) => (
+    <div
+      style={{
+        position: "absolute",
+        top: "20%",
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 20,
+        pointerEvents: "none",
+        opacity: visible ? 1 : 0,
+        transition: "opacity 0.35s ease",
+      }}
+    >
+      <div
+        style={{
+          background: "rgba(244,117,33,0.15)",
+          border: "1px solid rgba(244,117,33,0.35)",
+          borderRadius: 12,
+          padding: "7px 18px",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <span style={{ fontSize: 14 }}>⌘</span>
+        <span
+          style={{
+            color: "rgba(244,117,33,0.9)",
+            fontSize: 13,
+            fontWeight: 600,
+            letterSpacing: 0.5,
+          }}
+        >
+          {label}
+        </span>
+      </div>
+    </div>
+  ),
+);
+CommandToast.displayName = "CommandToast";
+
 // ── Main widget ──────────────────────────────────────────────────────────────
 export default function AuraChatWidget() {
   const vs = useVoiceState();
@@ -66,6 +111,21 @@ export default function AuraChatWidget() {
     autoSpeak: true,
     apiKey: API_KEY,
   });
+
+  // ── Mute state (needed before sr so we can pass toggleMute down) ──────────
+  const [muted, setMuted] = useState(false);
+
+  // ── Command toast state ───────────────────────────────────────────────────
+  const [cmdToast, setCmdToast] = useState("");
+  const [cmdToastVisible, setCmdToastVisible] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  const showCommandToast = useCallback((label: string) => {
+    setCmdToast(label);
+    setCmdToastVisible(true);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setCmdToastVisible(false), 1800);
+  }, []);
 
   const chat = useAuraChat({
     setVoiceState: vs.setVoiceState,
@@ -85,6 +145,52 @@ export default function AuraChatWidget() {
     onFinalTranscript: (text) => {
       profiler.trackMessage(text);
       profiler.stopAnalysis();
+
+      // ── VOICE COMMAND INTERCEPTION ────────────────────────────────────────
+      // Check BEFORE sending to AI. Short phrases like "stop", "bye", "mute"
+      // are commands, not messages.
+      const cmd = detectVoiceCommand(text);
+
+      if (cmd === "close") {
+        showCommandToast(COMMAND_LABELS.close);
+        chat.close();
+        return;
+      }
+
+      if (cmd === "stop" || cmd === "pause") {
+        showCommandToast(COMMAND_LABELS.stop);
+        chat.stopAll();
+        vs.setVoiceState("idle");
+        return;
+      }
+
+      if (cmd === "mute") {
+        showCommandToast(COMMAND_LABELS.mute);
+        setMuted(true);
+        chat.micEnabled.current = false;
+        sr.abortListening();
+        vs.setVoiceState("idle");
+        return;
+      }
+
+      if (cmd === "unmute") {
+        showCommandToast(COMMAND_LABELS.unmute);
+        setMuted(false);
+        chat.micEnabled.current = true;
+        sr.startListening();
+        return;
+      }
+
+      if (cmd === "restart") {
+        showCommandToast(COMMAND_LABELS.restart);
+        chat.stopAll();
+        vs.setVoiceState("idle");
+        // startListening will auto-trigger via the idle effect in useSpeechRecognition
+        return;
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
+      // Not a command — send to AI normally
       chat.sendMessage(text);
     },
     onInterimTranscript: chat.setTranscript,
@@ -130,7 +236,6 @@ export default function AuraChatWidget() {
   }, [chat]);
 
   // ── Mute toggle ────────────────────────────────────────────────────────────
-  const [muted, setMuted] = useState(false);
   const toggleMute = useCallback(() => {
     setMuted((m) => {
       const next = !m;
@@ -274,9 +379,13 @@ export default function AuraChatWidget() {
       <style>{`
         @keyframes auraFadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes auraPulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
-        @keyframes auraSlideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes auraSlideUp { from { opacity: 0; transform: translateY(12px) translateX(-50%); } to { opacity: 1; transform: translateY(0) translateX(-50%); } }
         @keyframes auraBreathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.03); } }
+        @keyframes cmdPop { 0% { opacity:0; transform: translateX(-50%) scale(0.88); } 60% { transform: translateX(-50%) scale(1.04); } 100% { opacity:1; transform: translateX(-50%) scale(1); } }
       `}</style>
+
+      {/* ── Command toast ───────────────────────────────────────────────────── */}
+      <CommandToast label={cmdToast} visible={cmdToastVisible} />
 
       {/* ── Top bar: close + user badge + offline ──────────────────────────── */}
       <div
@@ -501,6 +610,20 @@ export default function AuraChatWidget() {
         >
           {vs.statusText}
         </div>
+
+        {/* Voice command hint — shown only when idle and not onboarding */}
+        {vs.isIdle && !chat.isOnboard && (
+          <div
+            style={{
+              marginTop: 6,
+              color: "rgba(255,255,255,0.15)",
+              fontSize: 10,
+              letterSpacing: 1,
+            }}
+          >
+            say "stop" • "close" • "mute" to control
+          </div>
+        )}
       </div>
 
       {/* ── Live transcript (during listening) ─────────────────────────────── */}

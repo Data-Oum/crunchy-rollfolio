@@ -4,7 +4,10 @@
  * VOICE-ONLY Aura business logic. NO text input anywhere.
  * Tap orb → speak → Aura responds → auto-listen again.
  *
- * Integrates: fallback AI, Supabase persistence, voice profiling, diagnostics.
+ * FIXES:
+ *   1. stopAll() now blocks auto-restart via micEnabled.current = false
+ *   2. close() sets isOpen=false FIRST before any async work (no hanging UI)
+ *   3. open() calls resetOffline() so offline mode never persists across sessions
  */
 
 import {
@@ -29,6 +32,7 @@ import {
   detectInstantAnswer,
   generateSummary,
   isOffline,
+  resetOffline, // ← FIX 3: import resetOffline
 } from "@/lib/gemini";
 import { selectVoice, type VoiceConfig } from "@/lib/tts";
 import {
@@ -117,6 +121,7 @@ export function useAuraChat({
     sessionCounted.current = false;
     convoId.current = `c_${Date.now()}`;
     resetFallbackContext();
+    resetOffline(); // ← FIX 3: clear offline mode on every new session
     auraD.log("system", "info", "Session opened");
 
     setTimeout(() => {
@@ -152,59 +157,73 @@ export function useAuraChat({
   }, [speak, getStore]);
 
   // ── CLOSE ──────────────────────────────────────────────────────────────────
+  // FIX 2: Close UI immediately — don't await generateSummary before setIsOpen(false)
   const close = useCallback(async () => {
     micEnabled.current = false;
     abortListening();
     stopTTS();
     setVoiceState("idle");
 
-    const s = getStore();
-    const msgs = s.messages;
-
-    if (msgs.length > 2) {
-      const sum = await generateSummary(s.userProfile, msgs);
-      setEndSummary(sum);
-
-      // Local store save
-      s.saveConversation?.({
-        id: convoId.current,
-        date: new Date().toISOString(),
-        messages: [...msgs],
-        summary: sum,
-      });
-      if (s.userProfile) s.updateProfile({ interests: extractInterests(msgs) });
-
-      // Supabase save (fire-and-forget)
-      saveFullSession({
-        visitorName: s.userProfile?.name,
-        visitorCompany: s.userProfile?.company,
-        visitorRole: s.userProfile?.role,
-        visitorIntent: s.userProfile?.intent,
-        summary: sum,
-        messages: msgs,
-        metadata: {
-          convoId: convoId.current,
-          sessionCount: s.userProfile?.sessionCount,
-        },
-      }).catch((e) => auraD.error("supabase", e, "Session save failed"));
-
-      if (sum) setShowEndCard(true);
-    }
-
+    // ← FIX 2: Close UI FIRST so widget disappears instantly
     setIsOpen(false);
-    resetMessages();
-    setOnboardStep("welcome");
     setTranscript("");
     setLastAiText("");
+    setOnboardStep("welcome");
     sessionCounted.current = false;
+
+    // Summary + persistence runs in background after UI is already gone
+    const s = getStore();
+    const msgs = s.messages;
+    resetMessages();
+
     auraD.log("system", "info", "Session closed");
+
+    if (msgs.length > 2) {
+      try {
+        const sum = await generateSummary(s.userProfile, msgs);
+        setEndSummary(sum);
+
+        s.saveConversation?.({
+          id: convoId.current,
+          date: new Date().toISOString(),
+          messages: [...msgs],
+          summary: sum,
+        });
+        if (s.userProfile)
+          s.updateProfile({ interests: extractInterests(msgs) });
+
+        saveFullSession({
+          visitorName: s.userProfile?.name,
+          visitorCompany: s.userProfile?.company,
+          visitorRole: s.userProfile?.role,
+          visitorIntent: s.userProfile?.intent,
+          summary: sum,
+          messages: msgs,
+          metadata: {
+            convoId: convoId.current,
+            sessionCount: s.userProfile?.sessionCount,
+          },
+        }).catch((e) => auraD.error("supabase", e, "Session save failed"));
+
+        if (sum) setShowEndCard(true);
+      } catch (e) {
+        auraD.error("system", e, "Summary generation failed");
+      }
+    }
   }, [getStore, resetMessages, stopTTS, abortListening, setVoiceState]);
 
   // ── STOP ALL ───────────────────────────────────────────────────────────────
+  // FIX 1: Disable mic BEFORE stopping so auto-restart effect can't re-trigger.
+  //        Re-enable after 1.2s so the next manual tap still works.
   const stopAll = useCallback(() => {
+    micEnabled.current = false; // ← FIX 1: block the auto-restart guard
     stopTTS();
     abortListening();
     setIsLoading(false);
+    // Re-arm mic after cooldown so user can tap orb again
+    setTimeout(() => {
+      micEnabled.current = true;
+    }, 1200);
   }, [stopTTS, abortListening]);
 
   // ── SEND MESSAGE (voice-only, no text input) ──────────────────────────────
