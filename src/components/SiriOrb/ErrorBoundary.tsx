@@ -40,11 +40,13 @@ export class ErrorBoundary extends Component<Props, State> {
 export const SilentBoundary = ({
   name,
   children,
+  fallback = null,
 }: {
   name?: string;
   children: ReactNode;
+  fallback?: ReactNode;
 }) => (
-  <ErrorBoundary name={name} fallback={null}>
+  <ErrorBoundary name={name} fallback={fallback}>
     {children}
   </ErrorBoundary>
 );

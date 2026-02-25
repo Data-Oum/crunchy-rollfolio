@@ -1,6 +1,8 @@
 import { AnimeHero } from "@/components/AnimeHero";
 import { AnimeNav } from "@/components/AnimeNav";
 import { CinematicOpening } from "@/components/CinematicOpening";
+import { DevProfiler } from "@/components/SiriOrb/DevProfiler";
+import { SilentBoundary } from "@/components/SiriOrb/ErrorBoundary";
 import { Suspense, lazy, memo, useEffect, useRef, useState } from "react";
 
 const PlasmaCanvas = lazy(() =>
@@ -95,8 +97,12 @@ const BelowFoldSections = memo(() => (
 BelowFoldSections.displayName = "BelowFoldSections";
 
 const SiriOrbMount = memo(() => (
-  <Suspense fallback={NullFallback}>
-    <SiriOrb />
+  <Suspense>
+    <SilentBoundary name="SiriOrb" fallback={NullFallback}>
+      <DevProfiler id="SiriOrb">
+        <SiriOrb />
+      </DevProfiler>
+    </SilentBoundary>
   </Suspense>
 ));
 SiriOrbMount.displayName = "SiriOrbMount";

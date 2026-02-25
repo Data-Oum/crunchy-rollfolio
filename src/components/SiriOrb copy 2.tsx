@@ -68,9 +68,8 @@ if (
 // ═══════════════════════════════════════════════════════════════════════════════
 //  CONSTANTS & CONFIG
 // ═══════════════════════════════════════════════════════════════════════════════
-const GEMINI_KEY =
-  (import.meta as unknown as { env: Record<string, string> }).env
-    .VITE_GEMINI_API_KEY || "AIzaSyDrwkfrXSYXn86R-h-QKNQAtkH4v7C8A_Y";
+const GEMINI_KEY = (import.meta as unknown as { env: Record<string, string> })
+  .env.GEMINI_KEY;
 
 const GEMINI_CHAT_MODEL = "gemini-2.5-flash";
 const GEMINI_TTS_MODEL = "gemini-2.5-flash-preview-tts";

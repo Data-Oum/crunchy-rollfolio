@@ -1,7 +1,9 @@
 /**
  * src/components/SiriOrb/onboarding.ts
- * Pure string extractors — zero side effects, easily unit-testable.
+ * Onboarding step definitions and extraction helpers.
  */
+
+import type { Message } from "@/store/useConversationStore";
 
 export type OnboardStep =
   | "welcome"
@@ -11,153 +13,146 @@ export type OnboardStep =
   | "ask_intent"
   | "ready";
 
-export function toTitleCaseExport(s: string): string {
-  return s.replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-const NAME_STOPWORDS = new Set([
+const COMMON_WORDS = new Set([
+  "i",
+  "me",
+  "my",
+  "am",
+  "im",
+  "is",
+  "its",
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "but",
   "hi",
   "hey",
   "hello",
-  "my",
+  "yo",
   "name",
-  "is",
-  "i",
-  "am",
-  "its",
-  "it's",
-  "the",
   "call",
-  "me",
+  "just",
+  "people",
   "they",
-  "them",
+  "you",
+  "can",
+  "ok",
+  "okay",
+  "yeah",
+  "yes",
+  "no",
+  "not",
+  "please",
+  "thanks",
+  "thank",
+  "well",
+  "so",
+  "um",
+  "uh",
+  "like",
+  "actually",
+  "basically",
+  "really",
 ]);
 
 export function extractName(raw: string): string {
-  const words = raw
-    .trim()
-    .replace(/[^a-zA-Z\s'-]/g, "")
-    .split(/\s+/)
-    .filter((w) => w.length > 1 && !NAME_STOPWORDS.has(w.toLowerCase()));
-  if (!words.length) return "";
-  const name = toTitleCaseExport(words[0]);
-  return name.length > 1 ? name : "";
+  const s = raw.replace(/[.,!?;:'"]/g, "").trim();
+  const patterns = [
+    /(?:i'?m|i\s+am|my\s+name\s+is|they\s+call\s+me|call\s+me|it'?s)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
+    /^([A-Z][a-z]{1,15})$/,
+  ];
+  for (const p of patterns) {
+    const m = s.match(p);
+    if (m?.[1] && !COMMON_WORDS.has(m[1].toLowerCase()))
+      return toTitleCase(m[1].split(/\s+/)[0]);
+  }
+  const words = s.split(/\s+/);
+  for (const w of words) {
+    const clean = w.replace(/[^a-zA-Z]/g, "");
+    if (
+      clean.length >= 2 &&
+      clean.length <= 20 &&
+      /^[A-Z]/.test(clean) &&
+      !COMMON_WORDS.has(clean.toLowerCase())
+    )
+      return toTitleCase(clean);
+  }
+  for (const w of words) {
+    const clean = w.replace(/[^a-zA-Z]/g, "");
+    if (
+      clean.length >= 2 &&
+      clean.length <= 20 &&
+      !COMMON_WORDS.has(clean.toLowerCase())
+    )
+      return toTitleCase(clean);
+  }
+  return "";
 }
-
-const COMPANY_PATTERNS = [
-  /(?:at|from|with|for|@)\s+([A-Z][a-zA-Z0-9\s&.,''-]{1,40})/i,
-  /([A-Z][a-zA-Z0-9]{2,}(?:\s+[A-Z][a-zA-Z0-9]+)*)/,
-];
 
 export function extractCompany(raw: string): string {
-  const trimmed = raw.trim();
-  if (
-    /^(no|none|na|n\/a|freelance|self[\s-]?employed|independent)$/i.test(
-      trimmed,
-    )
-  )
-    return trimmed;
-  for (const pat of COMPANY_PATTERNS) {
-    const m = trimmed.match(pat);
-    if (m?.[1]?.length > 1) return toTitleCaseExport(m[1].trim());
+  const s = raw.replace(/[.,!?;:'"]/g, "").trim();
+  const patterns = [
+    /(?:from|at|with|work\s+(?:at|for)|company\s+is|represent)\s+(.+)/i,
+    /^([A-Z][\w\s&.-]{1,40})$/,
+  ];
+  for (const p of patterns) {
+    const m = s.match(p);
+    if (m?.[1]) return toTitleCase(m[1].trim().slice(0, 50));
   }
   return "";
 }
-
-const ROLE_MAP: Record<string, string> = {
-  recruit: "Recruiter",
-  hr: "HR",
-  talent: "Recruiter",
-  hire: "Recruiter",
-  hiring: "Recruiter",
-  engineer: "Engineer",
-  dev: "Engineer",
-  developer: "Engineer",
-  swe: "Engineer",
-  software: "Engineer",
-  coder: "Engineer",
-  founder: "Founder",
-  ceo: "CEO",
-  cofounder: "Co-Founder",
-  cto: "CTO",
-  coo: "COO",
-  vp: "VP",
-  investor: "Investor",
-  vc: "Investor",
-  venture: "Investor",
-  angel: "Angel Investor",
-  product: "Product Manager",
-  pm: "Product Manager",
-  manager: "Manager",
-  design: "Designer",
-  designer: "Designer",
-  ux: "Designer",
-  student: "Student",
-  intern: "Intern",
-  consultant: "Consultant",
-  freelance: "Freelancer",
-  partner: "Partner",
-  bd: "Business Dev",
-};
 
 export function extractRole(raw: string): string {
-  const lower = raw.toLowerCase();
-  for (const [key, label] of Object.entries(ROLE_MAP)) {
-    if (lower.includes(key)) return label;
-  }
-  if (raw.trim().length > 2 && raw.trim().length < 40)
-    return toTitleCaseExport(raw.trim());
+  const l = raw.toLowerCase();
+  if (/recruit|hr|talent|hiring|people\s*op/i.test(l)) return "Recruiter";
+  if (
+    /engineer|dev|program|code|tech|architect|full.?stack|front.?end|back.?end/i.test(
+      l,
+    )
+  )
+    return "Engineer";
+  if (/found|ceo|cto|co.?found|startup|entrepreneur|build.*company/i.test(l))
+    return "Founder";
+  if (/invest|vc|angel|capital|fund/i.test(l)) return "Investor";
+  if (/design|ux|ui|product\s*design/i.test(l)) return "Designer";
+  if (/product|pm|project|manage/i.test(l)) return "Product";
+  if (/student|learn|study|academ|research/i.test(l)) return "Student";
+  if (/explor|curiou|just\s*look|brows/i.test(l)) return "Explorer";
   return "";
 }
 
-const INTENT_MAP: Record<string, string> = {
-  hire: "Hiring",
-  recruit: "Hiring",
-  job: "Hiring",
-  position: "Hiring",
-  invest: "Investment",
-  funding: "Investment",
-  partner: "Partnership",
-  collab: "Collaboration",
-  collaborate: "Collaboration",
-  explore: "Exploring",
-  curious: "Exploring",
-  learn: "Exploring",
-  browse: "Exploring",
-  project: "Project Inquiry",
-  build: "Project Inquiry",
-  contract: "Contract Work",
-  consult: "Consulting",
-  advice: "Consulting",
-};
-
 export function extractIntent(raw: string): string {
-  const lower = raw.toLowerCase();
-  for (const [key, label] of Object.entries(INTENT_MAP)) {
-    if (lower.includes(key)) return label;
-  }
-  return "Exploring";
+  const l = raw.toLowerCase();
+  if (/hire|recruit|role|position|job|opening|candidate/i.test(l))
+    return "Hiring";
+  if (/project|build|freelan|contract|consult|mvp|develop/i.test(l))
+    return "Project";
+  if (/partner|collab|together|joint|co-/i.test(l)) return "Partnership";
+  if (/invest|fund|seed|series/i.test(l)) return "Investment";
+  if (/explor|curiou|learn|check|look|see/i.test(l)) return "Exploring";
+  return "General";
 }
 
-export function extractInterests(
-  msgs: { role: string; text: string }[],
-): string[] {
-  const topics = new Set<string>();
-  const patterns: [RegExp, string][] = [
-    [/\b(react\s*native|mobile|ios|android)\b/i, "Mobile Dev"],
-    [/\b(ai|ml|llm|rag|machine\s*learning|gemini|openai)\b/i, "AI/ML"],
-    [/\b(web3|defi|nft|blockchain|solidity|ethereum)\b/i, "Web3"],
-    [/\b(aws|kubernetes|docker|k8s|devops|cloud)\b/i, "Cloud/DevOps"],
-    [/\b(typescript|javascript|react|next\.?js|node)\b/i, "Frontend/Backend"],
-    [/\b(hire|hiring|job|position|role|recruit)\b/i, "Hiring"],
-    [/\b(rate|salary|cost|price|contract|consulting)\b/i, "Rates"],
-    [/\b(project|build|startup|mvp|product)\b/i, "Project Work"],
-  ];
-  for (const msg of msgs) {
-    if (msg.role !== "user") continue;
-    for (const [pat, topic] of patterns) {
-      if (pat.test(msg.text)) topics.add(topic);
-    }
-  }
-  return [...topics];
+export function extractInterests(msgs: Message[]): string[] {
+  const all = msgs.map((m) => m.text.toLowerCase()).join(" ");
+  const topics: string[] = [];
+  if (/game.?engine|vital|medical|health|hipaa/i.test(all))
+    topics.push("Medical AI");
+  if (/web3|defi|nft|blockchain|ethereum/i.test(all)) topics.push("Web3");
+  if (/react.?native|mobile|ios|android|app/i.test(all)) topics.push("Mobile");
+  if (/ai|ml|rag|mediapipe|tensor/i.test(all)) topics.push("AI/ML");
+  if (/team|lead|manage|hire/i.test(all)) topics.push("Leadership");
+  if (/rate|salary|cost|price/i.test(all)) topics.push("Rates");
+  if (/freelan|contract|available|open/i.test(all)) topics.push("Freelance");
+  return topics.slice(0, 5);
 }
+
+function toTitleCase(s: string): string {
+  return s.replace(
+    /\w\S*/g,
+    (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(),
+  );
+}
+export { toTitleCase as toTitleCaseExport };

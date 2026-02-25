@@ -1,2070 +1,675 @@
 /**
- * src/components/AuraChatWidget.tsx
+ * src/components/SiriOrb/AuraChatWidget.tsx
  *
- * Clean single-file Aura widget. Drop-in replacement for SiriOrbNew.
+ * PURE VOICE-ONLY interface. Zero text inputs. Zero chat panels.
+ * Just the plasma orb + floating glass UI elements.
  *
- * KEY DECISIONS vs previous version:
- *
- * 1. NO DOM SPRING / RAF animation fighting React.
- *    CSS `transition` on width/height/border-radius — React owns the values,
- *    the browser animates them. Zero reconciler conflict.
- *
- * 2. GRANULAR ZUSTAND SELECTORS.
- *    Each selector returns a primitive/stable slice. React.memo on child
- *    components. Zero cascade re-renders.
- *
- * 3. ALWAYS-ON MIC via useEffect guard.
- *    micActive ref gates all recognition. Killed on close/tab-hide/unload.
- *
- * 4. GEMINI TTS via @google/genai (module-level singleton).
- *    Falls back silently to browser speechSynthesis if API fails.
- *
- * 5. sendMessage in a ref so startListening is stable for its lifetime.
- *
- * USAGE:
- *   import { AuraChatWidget } from "@/components/AuraChatWidget";
- *   // In Index.tsx, replace <SiriOrbMount /> with:
- *   <AuraChatWidget />
+ * Layout:
+ *   - Fullscreen dark backdrop
+ *   - Centered plasma orb (tap to speak)
+ *   - Floating: last AI response (fades after 14s)
+ *   - Floating: live transcript (during listening)
+ *   - Status bar: kanji + mode + offline indicator
+ *   - Minimal controls: mute, stop, close
+ *   - Onboarding progress dots
+ *   - User badge (after onboarding)
+ *   - End card (session summary)
  */
 
-import { GoogleGenAI } from "@google/genai";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ONBOARD_STEPS, useAuraChat } from "@/hooks/useAuraChat";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { useTTS } from "@/hooks/useTTS";
+import { useVoiceProfiler } from "@/hooks/useVoiceProfiler";
+import { useVoiceState } from "@/hooks/useVoiceState";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { AuraOrb } from "./AuraOrb";
 
-import { askAura, detectInstantAnswer, generateSummary } from "@/lib/gemini";
-import type { Message, UserProfile } from "@/store/useConversationStore";
-import {
-  DAILY_LIMIT,
-  useConversationStore,
-} from "@/store/useConversationStore";
-import {
-  extractCompany,
-  extractIntent,
-  extractInterests,
-  extractName,
-  extractRole,
-  toTitleCaseExport,
-  type OnboardStep,
-} from "./onboarding";
-
-// ── Config ────────────────────────────────────────────────────────────────────
-const GEMINI_KEY =
+const API_KEY =
   (import.meta as unknown as { env: Record<string, string> }).env
-    .VITE_GEMINI_API_KEY || "AIzaSyDrwkfrXSYXn86R-h-QKNQAtkH4v7C8A_Y";
+    .VITE_GEMINI_API_KEY || "";
 
-const TTS_MODEL = "gemini-2.5-flash-preview-tts";
-const TTS_VOICE = "Orus"; // Firm — swap to Sulafat (Warm), Achird (Friendly)
-const TTS_RATE = 24000;
-const BMC_URL = "https://buymeacoffee.com/amithellmab";
-
-const ORB = 80;
-const PW = 390;
-const PH = 590;
-
-const SUGGESTIONS = [
-  "What's the most impressive thing you've built?",
-  "Tell me about your React Native expertise",
-  "Why should I hire Amit?",
-] as const;
-
-const CHIPS = [
-  "Who is Amit?",
-  "Biggest project?",
-  "Tech stack?",
-  "Why hire him?",
-  "Contact?",
-] as const;
-
-const ONBOARD_STEPS: OnboardStep[] = [
-  "ask_name",
-  "ask_company",
-  "ask_role",
-  "ask_intent",
-];
-
-// ── CSS (injected once) ───────────────────────────────────────────────────────
-const CSS_ID = "acw-css";
-if (typeof document !== "undefined" && !document.getElementById(CSS_ID)) {
-  const s = document.createElement("style");
-  s.id = CSS_ID;
-  s.textContent = `
-    @keyframes acwFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-    @keyframes acwHalo{0%,100%{opacity:.35;transform:scale(1.1)}50%{opacity:.7;transform:scale(1.35)}}
-    @keyframes acwWave{0%,100%{transform:scaleY(.25);opacity:.4}50%{transform:scaleY(1);opacity:1}}
-    @keyframes acwBlink{0%,100%{opacity:.6}50%{opacity:1}}
-    @keyframes acwDot{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-5px);opacity:1}}
-    @keyframes acwSlide{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-    @keyframes acwFade{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
-    @keyframes acwPulse{0%,100%{box-shadow:0 0 0 0 rgba(123,47,190,0)}50%{box-shadow:0 0 0 5px rgba(123,47,190,.1)}}
-    .acw-sc::-webkit-scrollbar{width:2px}
-    .acw-sc::-webkit-scrollbar-thumb{background:rgba(244,117,33,.16);border-radius:99px}
-    .acw-inp{background:transparent!important;color:#fff!important;border:none!important;outline:none!important;}
-    .acw-inp::placeholder{color:rgba(255,255,255,.18)!important}
-    .acw-chip:hover{border-color:rgba(244,117,33,.5)!important;color:#F47521!important}
-    .acw-sug:hover{background:rgba(244,117,33,.07)!important;border-color:rgba(244,117,33,.28)!important}
-    .acw-send:hover:not(:disabled){transform:scale(1.05)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 0 20px rgba(244,117,33,.38)!important}
-    .acw-send:active:not(:disabled){transform:scale(.92)!important}
-    .acw-send:disabled{opacity:.22;cursor:not-allowed}
-    .acw-ib:hover{background:rgba(255,255,255,.07)!important}
-    .acw-msg{animation:acwSlide .25s cubic-bezier(.34,1.4,.64,1) forwards}
-    .acw-ob{animation:acwPulse 2.4s ease-in-out infinite}
-  `;
-  document.head.appendChild(s);
-}
-
-// ── Gemini TTS engine (module-level singletons) ───────────────────────────────
-const genAI = new GoogleGenAI({ apiKey: GEMINI_KEY });
-
-/** Strip markdown/URLs so TTS doesn't say "asterisk" */
-const toSpeakable = (t: string) =>
-  t
-    .replace(/https?:\/\/\S+/g, "")
-    .replace(/[*_`#>|]/g, "")
-    .replace(/—/g, ", ")
-    .replace(/\bAPI\b/g, "A.P.I.")
-    .replace(/\bCTO\b/g, "C.T.O.")
-    .replace(/\bVP\b/g, "V.P.")
-    .replace(/\bAWS\b/g, "Amazon Web Services")
-    .replace(/\bK8s\b/gi, "Kubernetes")
-    .replace(/50K\+?/g, "50 thousand plus")
-    .trim();
-
-/** Director-style prompt improves delivery quality */
-const makeTTSPrompt = (text: string) =>
-  `
-# AUDIO PROFILE: Aura — Voice of Amit Chakraborty
-## THE SCENE: One-on-one portfolio conversation
-### DIRECTOR'S NOTES
-Style: Confident, declarative, founder energy. Each sentence lands with weight.
-Pacing: Measured. Micro-pauses after key facts.
-Accent: Clear neutral English with subtle Indian-educated inflection.
-#### TRANSCRIPT
-${toSpeakable(text)}`.trim();
-
-const b64ToU8 = (b64: string) => {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-};
-
-const pcmToF32 = (bytes: Uint8Array) => {
-  const n = Math.floor(bytes.length / 2);
-  const f = new Float32Array(n);
-  const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  for (let i = 0; i < n; i++) f[i] = v.getInt16(i * 2, true) / 32768;
-  return f;
-};
-
-let _ctx: AudioContext | null = null;
-const getCtx = () => {
-  if (!_ctx || _ctx.state === "closed")
-    _ctx = new AudioContext({ sampleRate: TTS_RATE });
-  if (_ctx.state === "suspended") _ctx.resume().catch(() => {});
-  return _ctx;
-};
-
-class TTSPlayer {
-  private src: AudioBufferSourceNode | null = null;
-  private abort = new AbortController();
-
-  stop() {
-    try {
-      this.src?.stop();
-    } catch {}
-    this.src?.disconnect();
-    this.src = null;
-    this.abort.abort();
-    this.abort = new AbortController();
-  }
-
-  async speak(text: string, onStart?: () => void, onEnd?: () => void) {
-    this.stop();
-    const sig = this.abort.signal;
-    try {
-      const res = await genAI.models.generateContent({
-        model: TTS_MODEL,
-        contents: [{ parts: [{ text: makeTTSPrompt(text) }] }],
-        config: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: TTS_VOICE } },
-          },
-        },
-      });
-      if (sig.aborted) return;
-      const data = res.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (!data) throw new Error("no audio data");
-      const buf = getCtx().createBuffer(
-        1,
-        pcmToF32(b64ToU8(data)).length,
-        TTS_RATE,
-      );
-      buf.copyToChannel(pcmToF32(b64ToU8(data)), 0);
-      const src = getCtx().createBufferSource();
-      src.buffer = buf;
-      src.connect(getCtx().destination);
-      this.src = src;
-      await new Promise<void>((res) => {
-        src.onended = () => {
-          this.src = null;
-          onEnd?.();
-          res();
-        };
-        sig.addEventListener("abort", () => {
-          try {
-            src.stop();
-          } catch {}
-          this.src = null;
-          onEnd?.();
-          res();
-        });
-        onStart?.();
-        src.start(0);
-      });
-    } catch (err: unknown) {
-      if ((err as Error).name === "AbortError") return;
-      onEnd?.();
-      // Silent browser TTS fallback
-      if (!window.speechSynthesis) return;
-      await new Promise<void>((r) => {
-        const u = new SpeechSynthesisUtterance(toSpeakable(text));
-        u.rate = 0.92;
-        u.pitch = 0.95;
-        u.onstart = () => onStart?.();
-        u.onend = u.onerror = () => {
-          onEnd?.();
-          r();
-        };
-        window.speechSynthesis.speak(u);
-      });
-    }
-  }
-}
-
-const tts = new TTSPlayer();
-
-// ── PlasmaOrb canvas (mode via ref — zero re-renders) ─────────────────────────
-type OrbMode = "idle" | "listening" | "thinking" | "speaking";
-
-const PlasmaOrb = memo(({ size, mode }: { size: number; mode: OrbMode }) => {
-  const cv = useRef<HTMLCanvasElement>(null);
-  const raf = useRef(0);
-  const mRef = useRef(mode);
-  useEffect(() => {
-    mRef.current = mode;
-  }, [mode]);
-
-  useEffect(() => {
-    const c = cv.current;
-    if (!c) return;
-    c.width = size;
-    c.height = size;
-    const g = c.getContext("2d")!;
-    const CX = size / 2,
-      CY = size / 2,
-      R = size * 0.42;
-
-    const blobs = Array.from({ length: 6 }, (_, i) => ({
-      angle: (i / 6) * Math.PI * 2,
-      r: R * (0.15 + Math.random() * 0.2),
-      speed: 0.007 + Math.random() * 0.008,
-      phase: Math.random() * Math.PI * 2,
-      hue: [28, 270, 28, 270, 45, 300][i] as number,
-      sz: R * (0.25 + Math.random() * 0.3),
-    }));
-    const pts = Array.from({ length: 50 }, (_, i) => ({
-      angle: (i / 50) * Math.PI * 2,
-      orbitR: R * (0.65 + Math.random() * 0.4),
-      tilt: (Math.random() - 0.5) * 0.6,
-      spd: 0.004 + Math.random() * 0.008,
-      sz: 0.7 + Math.random() * 1.4,
-      op: 0.3 + Math.random() * 0.6,
-      hue: Math.random() > 0.5 ? 28 : 270,
-      front: Math.random() > 0.45,
-    }));
-    const tnd = Array.from({ length: 8 }, (_, i) => ({
-      base: (i / 8) * Math.PI * 2,
-      phase: Math.random() * Math.PI * 2,
-      spd: 0.012 + Math.random() * 0.008,
-      len: R * (0.3 + Math.random() * 0.5),
-      w: 0.6 + Math.random() * 1.0,
-      hue: i % 2 === 0 ? 28 : 270,
-    }));
-
-    let t = 0,
-      E = 0.5;
-    const loop = () => {
-      t++;
-      const cm = mRef.current;
-      E +=
-        ((cm === "idle"
-          ? 0.45
-          : cm === "listening"
-            ? 0.9
-            : cm === "thinking"
-              ? 0.65
-              : 0.8) -
-          E) *
-        0.04;
-      g.clearRect(0, 0, size, size);
-
-      // Ambient
-      const amb = g.createRadialGradient(CX, CY, 0, CX, CY, R * 1.5);
-      amb.addColorStop(0, `rgba(244,117,33,${0.08 * E})`);
-      amb.addColorStop(0.5, `rgba(123,47,190,${0.04 * E})`);
-      amb.addColorStop(1, "rgba(0,0,0,0)");
-      g.fillStyle = amb;
-      g.fillRect(0, 0, size, size);
-
-      // Back particles
-      pts
-        .filter((p) => !p.front)
-        .forEach((p) => {
-          p.angle += p.spd;
-          const x = CX + Math.cos(p.angle) * p.orbitR * Math.cos(p.tilt);
-          const y = CY + Math.sin(p.angle) * p.orbitR;
-          const d = (Math.cos(p.angle) * Math.cos(p.tilt) + 1) / 2;
-          if (d < 0.5) {
-            g.beginPath();
-            g.arc(x, y, p.sz * d, 0, Math.PI * 2);
-            g.fillStyle = `hsla(${p.hue},85%,65%,${p.op * d * 0.25 * E})`;
-            g.fill();
-          }
-        });
-
-      // Glass sphere
-      const gl = g.createRadialGradient(
-        CX - R * 0.2,
-        CY - R * 0.25,
-        R * 0.04,
-        CX,
-        CY,
-        R,
-      );
-      gl.addColorStop(0, "rgba(12,8,18,0.97)");
-      gl.addColorStop(0.6, "rgba(5,3,10,0.98)");
-      gl.addColorStop(1, "rgba(2,1,5,0.99)");
-      g.beginPath();
-      g.arc(CX, CY, R, 0, Math.PI * 2);
-      g.fillStyle = gl;
-      g.fill();
-
-      g.save();
-      g.beginPath();
-      g.arc(CX, CY, R - 1, 0, Math.PI * 2);
-      g.clip();
-
-      // Interior blobs
-      blobs.forEach((b, i) => {
-        b.angle += b.speed + E * 0.004;
-        const bx =
-          CX +
-          Math.cos(b.angle + b.phase) *
-            b.r *
-            (1 + Math.sin(t * 0.02 + i) * 0.25);
-        const by =
-          CY +
-          Math.sin(b.angle * 1.2 + b.phase) *
-            b.r *
-            (1 + Math.cos(t * 0.016 + i) * 0.2);
-        const pr = b.sz * (0.85 + Math.sin(t * 0.03 + i * 1.1) * 0.15) * E;
-        const pg = g.createRadialGradient(bx, by, 0, bx, by, pr);
-        const a = 0.15 + E * 0.22;
-        if (b.hue === 28 || b.hue === 45) {
-          pg.addColorStop(0, `rgba(255,160,60,${a * 1.4})`);
-          pg.addColorStop(0.4, `rgba(244,117,33,${a})`);
-        } else {
-          pg.addColorStop(0, `rgba(160,80,255,${a * 1.1})`);
-          pg.addColorStop(0.4, `rgba(123,47,190,${a})`);
-        }
-        pg.addColorStop(1, "rgba(0,0,0,0)");
-        g.fillStyle = pg;
-        g.beginPath();
-        g.arc(bx, by, pr, 0, Math.PI * 2);
-        g.fill();
-      });
-
-      // Mode overlay
-      const pulse = 0.6 + Math.sin(t * 0.055) * 0.2 + E * 0.2;
-      if (cm === "listening") {
-        for (let r = 0; r < 3; r++) {
-          g.beginPath();
-          g.arc(
-            CX,
-            CY,
-            R * (0.2 + r * 0.18) * (1 + Math.sin(t * 0.05 + r * 1.2) * 0.12),
-            0,
-            Math.PI * 2,
-          );
-          g.strokeStyle = `rgba(244,117,33,${(0.4 - r * 0.1) * pulse})`;
-          g.lineWidth = 1.5 - r * 0.4;
-          g.stroke();
-        }
-        g.strokeStyle = `rgba(255,200,100,${0.7 * pulse})`;
-        g.lineWidth = 2;
-        g.beginPath();
-        g.roundRect(CX - 7, CY - 14, 14, 20, 7);
-        g.stroke();
-        g.beginPath();
-        g.arc(CX, CY + 10, 10, Math.PI, 0);
-        g.stroke();
-        g.beginPath();
-        g.moveTo(CX, CY + 20);
-        g.lineTo(CX, CY + 25);
-        g.stroke();
-      } else if (cm === "thinking") {
-        for (let d = 0; d < 4; d++) {
-          const da = (d / 4) * Math.PI * 2 + t * 0.06;
-          g.beginPath();
-          g.arc(
-            CX + Math.cos(da) * R * 0.28,
-            CY + Math.sin(da) * R * 0.28,
-            3.5,
-            0,
-            Math.PI * 2,
-          );
-          g.fillStyle = `rgba(244,117,33,${0.5 + d * 0.12})`;
-          g.fill();
-        }
-      } else if (cm === "speaking") {
-        const bars = 9,
-          bw = 3,
-          tw = bars * bw + (bars - 1) * 3;
-        for (let b = 0; b < bars; b++) {
-          const bh =
-            R * 0.28 * (0.3 + Math.abs(Math.sin(t * 0.1 + b * 0.9)) * 0.8) * E;
-          g.fillStyle = `rgba(244,117,33,${0.6 + (b % 2) * 0.2})`;
-          g.beginPath();
-          g.roundRect(CX - tw / 2 + b * (bw + 3), CY - bh / 2, bw, bh, 1.5);
-          g.fill();
-        }
-      } else {
-        g.font = `800 ${Math.round(size * 0.115)}px 'Courier New',monospace`;
-        g.textAlign = "center";
-        g.textBaseline = "middle";
-        g.shadowColor = `rgba(244,117,33,${0.4 * pulse})`;
-        g.shadowBlur = 12;
-        g.fillStyle = `rgba(255,200,120,${0.75 * pulse})`;
-        g.fillText("AURA", CX, CY - 2);
-        g.shadowBlur = 0;
-      }
-      g.restore();
-
-      // Tendrils
-      tnd.forEach((tn) => {
-        tn.phase += tn.spd;
-        const ang = tn.base + Math.sin(tn.phase) * 0.35;
-        const extR = R + tn.len * E * (0.25 + Math.sin(tn.phase * 1.1) * 0.2);
-        const x1 = CX + Math.cos(ang) * R * 0.92,
-          y1 = CY + Math.sin(ang) * R * 0.92;
-        const x2 = CX + Math.cos(ang + Math.sin(tn.phase) * 0.2) * extR;
-        const y2 = CY + Math.sin(ang + Math.sin(tn.phase) * 0.2) * extR;
-        const tg = g.createLinearGradient(x1, y1, x2, y2);
-        tg.addColorStop(
-          0,
-          tn.hue === 28
-            ? `rgba(244,117,33,${0.5 * E})`
-            : `rgba(123,47,190,${0.4 * E})`,
-        );
-        tg.addColorStop(1, "rgba(0,0,0,0)");
-        g.beginPath();
-        g.moveTo(x1, y1);
-        g.quadraticCurveTo(
-          CX + Math.cos(ang + 0.15) * (R + extR) * 0.42,
-          CY + Math.sin(ang + 0.15) * (R + extR) * 0.42,
-          x2,
-          y2,
-        );
-        g.strokeStyle = tg;
-        g.lineWidth = tn.w * E;
-        g.stroke();
-      });
-
-      // Rim
-      const rim = g.createRadialGradient(CX, CY, R * 0.82, CX, CY, R);
-      rim.addColorStop(0, "rgba(0,0,0,0)");
-      rim.addColorStop(0.6, `rgba(244,117,33,${0.08 + E * 0.06})`);
-      rim.addColorStop(0.88, `rgba(244,117,33,${0.18 + E * 0.1})`);
-      rim.addColorStop(1, "rgba(123,47,190,.08)");
-      g.beginPath();
-      g.arc(CX, CY, R, 0, Math.PI * 2);
-      g.fillStyle = rim;
-      g.fill();
-      g.strokeStyle = `rgba(244,117,33,${0.18 + E * 0.15})`;
-      g.lineWidth = 0.8;
-      g.stroke();
-
-      // Front particles
-      pts
-        .filter((p) => p.front)
-        .forEach((p) => {
-          const x = CX + Math.cos(p.angle) * p.orbitR * Math.cos(p.tilt);
-          const y = CY + Math.sin(p.angle) * p.orbitR;
-          const d = (Math.cos(p.angle) * Math.cos(p.tilt) + 1) / 2;
-          if (d >= 0.5) {
-            const pg = g.createRadialGradient(x, y, 0, x, y, p.sz * 2.2);
-            pg.addColorStop(0, `hsla(${p.hue},88%,72%,${p.op * d * E})`);
-            pg.addColorStop(1, "hsla(0,0%,0%,0)");
-            g.beginPath();
-            g.arc(x, y, p.sz * 1.8, 0, Math.PI * 2);
-            g.fillStyle = pg;
-            g.fill();
-          }
-        });
-
-      raf.current = requestAnimationFrame(loop);
-    };
-    loop();
-    return () => cancelAnimationFrame(raf.current);
-  }, [size]);
-
-  return (
-    <canvas ref={cv} style={{ display: "block", width: size, height: size }} />
-  );
-});
-PlasmaOrb.displayName = "PlasmaOrb";
-
-// ── Sub-components (memo — re-render only on own props) ───────────────────────
-const AuraIcon = memo(({ size = 30 }: { size?: number }) => (
-  <div
-    style={{
-      width: size,
-      height: size,
-      flexShrink: 0,
-      borderRadius: "38% 62% 52% 48%/48% 52% 48% 52%",
-      background: "linear-gradient(135deg,#F47521,#7B2FBE)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      boxShadow: `0 0 ${Math.round(size * 0.4)}px rgba(244,117,33,.4)`,
-    }}
-  >
-    <svg
-      width={Math.round(size * 0.4)}
-      height={Math.round(size * 0.4)}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="#fff"
-      strokeWidth="2"
-      strokeLinecap="round"
-    >
-      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
-      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-      <line x1="12" y1="19" x2="12" y2="23" />
-    </svg>
-  </div>
-));
-AuraIcon.displayName = "AuraIcon";
-
-const MsgBubble = memo(({ m, onboard }: { m: Message; onboard: boolean }) => (
-  <div
-    className="acw-msg"
-    style={{
-      display: "flex",
-      justifyContent: m.role === "user" ? "flex-end" : "flex-start",
-      marginBottom: 8,
-    }}
-  >
-    {m.role === "ai" && (
-      <div style={{ marginRight: 6, marginTop: 2 }}>
-        <AuraIcon size={24} />
-      </div>
-    )}
+// ── Glass card component ─────────────────────────────────────────────────────
+const Glass = memo(
+  ({
+    children,
+    className = "",
+    style,
+  }: {
+    children: React.ReactNode;
+    className?: string;
+    style?: React.CSSProperties;
+  }) => (
     <div
+      className={className}
       style={{
-        maxWidth: "78%",
-        borderRadius:
-          m.role === "user" ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-        padding: "9px 13px",
-        fontSize: 12.5,
-        lineHeight: 1.65,
-        ...(m.role === "user"
-          ? {
-              background: "rgba(244,117,33,.15)",
-              border: "1px solid rgba(244,117,33,.22)",
-              color: "#fed7aa",
-            }
-          : {
-              background: "#0F0C18",
-              border: onboard
-                ? "1px solid rgba(123,47,190,.2)"
-                : "1px solid rgba(255,255,255,.055)",
-              color: "rgba(255,255,255,.86)",
-            }),
+        background: "rgba(12,8,18,0.72)",
+        backdropFilter: "blur(18px) saturate(1.3)",
+        WebkitBackdropFilter: "blur(18px) saturate(1.3)",
+        border: "1px solid rgba(244,117,33,0.12)",
+        borderRadius: 16,
+        ...style,
       }}
     >
-      {m.text}
+      {children}
     </div>
-  </div>
-));
-MsgBubble.displayName = "MsgBubble";
+  ),
+);
+Glass.displayName = "Glass";
 
-const Typing = memo(() => (
-  <div
-    style={{
-      display: "flex",
-      alignItems: "flex-start",
-      gap: 6,
-      marginBottom: 8,
-    }}
-  >
-    <AuraIcon size={24} />
-    <div
-      style={{
-        padding: "10px 14px",
-        borderRadius: "16px 16px 16px 4px",
-        background: "#0F0C18",
-        border: "1px solid rgba(255,255,255,.055)",
-        display: "flex",
-        gap: 5,
-        alignItems: "center",
-      }}
-    >
-      {[0, 160, 320].map((d) => (
-        <span
-          key={d}
-          style={{
-            width: 5,
-            height: 5,
-            borderRadius: "50%",
-            background: "#F47521",
-            display: "inline-block",
-            animation: `acwDot 1.2s ${d}ms infinite`,
-          }}
-        />
-      ))}
-    </div>
-  </div>
-));
-Typing.displayName = "Typing";
+// ── Main widget ──────────────────────────────────────────────────────────────
+export default function AuraChatWidget() {
+  const vs = useVoiceState();
+  const profiler = useVoiceProfiler();
 
-// ── Main ──────────────────────────────────────────────────────────────────────
-export const AuraChatWidget = () => {
-  // ── Granular Zustand selectors (only re-renders when OWN slice changes) ───
-  const messages = useConversationStore((s) => s.messages);
-  const userProfile = useConversationStore((s) => s.userProfile);
-  const addMessage = useConversationStore((s) => s.addMessage);
-  const resetMessages = useConversationStore((s) => s.resetMessages);
-  const setProfile = useConversationStore((s) => s.setProfile);
-  const updateProfile = useConversationStore((s) => s.updateProfile);
-  const canChat = useConversationStore((s) => s.canChat);
-  const getRemaining = useConversationStore((s) => s.getRemainingChats);
-  const getStore = useConversationStore.getState;
+  const tts = useTTS({
+    setVoiceState: vs.setVoiceState,
+    autoSpeak: true,
+    apiKey: API_KEY,
+  });
 
-  // ── State ─────────────────────────────────────────────────────────────────
-  const [isOpen, setIsOpen] = useState(false);
-  const [chatReady, setChatReady] = useState(false); // delay chat mount
-  const [voiceState, setVoiceState] = useState<
-    "idle" | "listening" | "thinking" | "speaking"
-  >("idle");
-  const [inputText, setInputText] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [transcript, setTranscript] = useState("");
-  const [autoSpeak, setAutoSpeak] = useState(true);
-  const [isMobile, setIsMobile] = useState(
-    () => typeof window !== "undefined" && window.innerWidth <= 640,
-  );
-  const [onboardStep, setOnboardStep] = useState<OnboardStep>("welcome");
-  const [showEnd, setShowEnd] = useState(false);
-  const [endSummary, setEndSummary] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const chat = useAuraChat({
+    setVoiceState: vs.setVoiceState,
+    speak: tts.speak,
+    stopTTS: tts.stopTTS,
+    abortListening: () => sr.abortListening(),
+    getVoiceProfileContext: profiler.getProfileContext,
+  });
 
-  // ── Refs ──────────────────────────────────────────────────────────────────
-  const loadingRef = useRef(false);
-  const autoSpeakRef = useRef(true);
-  const stepRef = useRef<OnboardStep>("welcome");
-  const micActive = useRef(false); // gates ALL recognition
-  const sessionCounted = useRef(false);
-  const recog = useRef<SpeechRecognition | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const convoId = useRef(`c_${Date.now()}`);
-  const sendRef = useRef<(t: string) => void>(() => {}); // stable ref trick
-
-  useEffect(() => {
-    loadingRef.current = isLoading;
-  }, [isLoading]);
-  useEffect(() => {
-    autoSpeakRef.current = autoSpeak;
-  }, [autoSpeak]);
-  useEffect(() => {
-    stepRef.current = onboardStep;
-  }, [onboardStep]);
-
-  // ── Derived ───────────────────────────────────────────────────────────────
-  const limitHit = !canChat();
-  const convoLeft = getRemaining();
-  const isOnboard = onboardStep !== "ready";
-  const isVoiceOn = voiceState === "listening" || voiceState === "speaking";
-  const showBMC = messages.filter((m) => m.role === "user").length >= 3;
-  const onbIdx = ONBOARD_STEPS.indexOf(onboardStep);
-
-  const orbMode = useMemo<OrbMode>(() => {
-    if (voiceState === "listening") return "listening";
-    if (voiceState === "thinking") return "thinking";
-    if (voiceState === "speaking") return "speaking";
-    return "idle";
-  }, [voiceState]);
-
-  const status = error
-    ? error
-    : voiceState === "listening"
-      ? "Listening..."
-      : voiceState === "thinking"
-        ? "Thinking..."
-        : voiceState === "speaking"
-          ? "Speaking..."
-          : "Ready";
-
-  const placeholder = isOnboard
-    ? onboardStep === "ask_name"
-      ? "Your first name..."
-      : onboardStep === "ask_company"
-        ? "Company or org..."
-        : onboardStep === "ask_role"
-          ? "Your role..."
-          : "What brings you here..."
-    : "Ask anything about Amit...";
-
-  // ── CSS-transition container style — React owns, browser animates ─────────
-  // This is THE fix. No DOM spring. No requestAnimationFrame vs reconciler.
-  const TRANS =
-    "width .48s cubic-bezier(.34,1.2,.64,1),height .48s cubic-bezier(.34,1.2,.64,1),border-radius .48s cubic-bezier(.34,1.2,.64,1),background .32s ease,backdrop-filter .32s ease,border .32s ease,box-shadow .32s ease";
-  const containerStyle = useMemo((): React.CSSProperties => {
-    if (!isOpen)
-      return {
-        width: ORB,
-        height: ORB,
-        borderRadius: ORB / 2,
-        background: "transparent",
-        backdropFilter: "none",
-        border: "none",
-        boxShadow: "none",
-        transition: TRANS,
-      };
-    return {
-      width: isMobile ? "100vw" : PW,
-      height: isMobile ? "100dvh" : PH,
-      borderRadius: isMobile ? 0 : 20,
-      background: "rgba(7,4,12,.94)",
-      backdropFilter: "blur(28px) saturate(1.8)",
-      border: isMobile ? "none" : "1px solid rgba(244,117,33,.12)",
-      boxShadow: isMobile
-        ? "none"
-        : "0 32px 90px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.03)",
-      transition: TRANS,
-    };
-  }, [isOpen, isMobile]);
-
-  // ── Init ──────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= 640);
-    window.addEventListener("resize", onResize);
-    const killMic = () => {
-      micActive.current = false;
-      try {
-        recog.current?.abort();
-      } catch {}
-      recog.current = null;
-      tts.stop();
-    };
-    window.addEventListener("beforeunload", killMic);
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden) killMic();
-    });
-    const s = getStore();
-    if (s.userProfile) {
-      s.updateProfile({
-        sessionCount: (s.userProfile.sessionCount || 0) + 1,
-        lastSeen: new Date().toISOString(),
-      });
-      s.incrementSession?.();
-      setOnboardStep("ready");
-    }
-    return () => {
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("beforeunload", killMic);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // ── SR ────────────────────────────────────────────────────────────────────
-  const SR = useMemo(() => {
-    if (typeof window === "undefined") return null;
-    return (
-      window.SpeechRecognition ||
-      (
-        window as unknown as {
-          webkitSpeechRecognition?: typeof SpeechRecognition;
-        }
-      ).webkitSpeechRecognition ||
-      null
-    );
-  }, []);
-
-  // startListening — depends only on SR (stable). Uses sendRef for message.
-  const startListening = useCallback(() => {
-    if (!SR || !micActive.current) return;
-    try {
-      recog.current?.abort();
-    } catch {}
-    recog.current = null;
-    setVoiceState("listening");
-    setTranscript("");
-    const r = new SR();
-    recog.current = r;
-    r.continuous = false;
-    r.interimResults = true;
-    r.lang = "en-US";
-    r.onresult = (e: SpeechRecognitionEvent) => {
-      const t = Array.from(e.results)
-        .map((res) => res[0].transcript)
-        .join("");
-      setTranscript(t);
-      if (e.results[e.results.length - 1].isFinal) {
-        r.stop();
-        sendRef.current(t);
-      }
-    };
-    r.onerror = () => {
-      setVoiceState("idle");
-      setTranscript("");
-    };
-    r.onend = () => {
-      setVoiceState((v) => (v === "listening" ? "idle" : v));
-    };
-    r.start();
-  }, [SR]);
-
-  const stopListening = useCallback(() => {
-    try {
-      recog.current?.stop();
-    } catch {}
-    recog.current = null;
-    setVoiceState("idle");
-    setTranscript("");
-  }, []);
-
-  // Always-on mic: restart when idle + open + not loading
-  useEffect(() => {
-    if (voiceState !== "idle" || !isOpen || isLoading || !micActive.current)
-      return;
-    const t = setTimeout(() => {
-      if (isOpen && !loadingRef.current && micActive.current) startListening();
-    }, 700);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voiceState, isOpen, isLoading]);
-
-  // ── TTS ───────────────────────────────────────────────────────────────────
-  const speak = useCallback(async (text: string) => {
-    if (!autoSpeakRef.current) return;
-    try {
-      recog.current?.abort();
-    } catch {}
-    recog.current = null;
-    await tts.speak(
-      text,
-      () => setVoiceState("speaking"),
-      () => setVoiceState("idle"),
-    );
-  }, []);
-
-  const stopSpeak = useCallback(() => {
-    tts.stop();
-    setVoiceState("idle");
-  }, []);
-
-  // ── Open ──────────────────────────────────────────────────────────────────
-  const open = useCallback(() => {
-    setIsOpen(true);
-    micActive.current = true;
-    sessionCounted.current = false;
-    convoId.current = `c_${Date.now()}`;
-    // Mount chat content after container starts expanding
-    setTimeout(() => {
-      setChatReady(true);
-      setTimeout(() => inputRef.current?.focus(), 80);
-    }, 80);
-    setTimeout(() => {
-      const s = getStore();
-      const p = s.userProfile;
-      let greeting: string;
-      if (p?.name) {
-        const topics = extractInterests(
-          s.getRecentConversationMessages?.(6) ?? [],
-        );
-        greeting = topics.length
-          ? `${p.name}. Session ${p.sessionCount || 1}. Last time: ${topics.slice(0, 2).join(" and ")}. What do you need?`
-          : `${p.name}. Session ${p.sessionCount || 1}. What can I help with today?`;
-      } else {
-        greeting = "I'm Aura, Amit Chakraborty's AI. What's your name?";
-        setOnboardStep("ask_name");
-      }
-      s.setMessages([{ role: "ai", text: greeting, ts: Date.now() }]);
-      speak(greeting);
-    }, 500);
-  }, [speak, getStore]);
-
-  // ── Close ─────────────────────────────────────────────────────────────────
-  const close = useCallback(async () => {
-    micActive.current = false;
-    try {
-      recog.current?.abort();
-    } catch {}
-    recog.current = null;
-    tts.stop();
-    setVoiceState("idle");
-    const s = getStore();
-    const msgs = s.messages;
-    if (msgs.length > 1) {
-      const sum = await generateSummary(s.userProfile, msgs);
-      setEndSummary(sum);
-      s.saveConversation?.({
-        id: convoId.current,
-        date: new Date().toISOString(),
-        messages: [...msgs],
-        summary: sum,
-      });
-      if (s.userProfile) s.updateProfile({ interests: extractInterests(msgs) });
-      setShowEnd(true);
-    }
-    setIsOpen(false);
-    setChatReady(false);
-    resetMessages();
-    setOnboardStep("welcome");
-    sessionCounted.current = false;
-  }, [getStore, resetMessages]);
-
-  // ── Send message ──────────────────────────────────────────────────────────
-  const sendMessage = useCallback(
-    async (text: string) => {
-      const msg = text.trim();
-      if (!msg || loadingRef.current) return;
-      setInputText("");
-      setTranscript("");
-      const s = getStore();
-      if (!sessionCounted.current) {
-        if (!s.canChat()) return;
-        s.incrementDaily();
-        sessionCounted.current = true;
-      }
-
-      const step = stepRef.current;
-
-      // ── Onboarding ──────────────────────────────────────────────────────
-      if (step !== "ready") {
-        addMessage({ role: "user", text: msg, ts: Date.now() });
-        let np: UserProfile = s.userProfile ?? {
-          name: "",
-          company: "",
-          role: "",
-          intent: "",
-          sessionCount: 1,
-          firstSeen: new Date().toISOString(),
-          lastSeen: new Date().toISOString(),
-          totalMessages: 0,
-          interests: [],
-        };
-        let next: OnboardStep = step,
-          reply = "";
-
-        if (step === "ask_name") {
-          const name = extractName(msg);
-          if (name) {
-            np = { ...np, name };
-            next = "ask_company";
-            reply = `${name}. Which company are you with?`;
-          } else reply = "Just your first name — what should I call you?";
-        } else if (step === "ask_company") {
-          const co =
-            extractCompany(msg) ||
-            (msg.length > 1 && msg.length < 60
-              ? toTitleCaseExport(msg.trim())
-              : "");
-          if (co) {
-            np = { ...np, company: co };
-            next = "ask_role";
-            reply = "Your role — recruiter, engineer, founder, investor?";
-          } else reply = "Which company or organization are you with?";
-        } else if (step === "ask_role") {
-          const role = extractRole(msg);
-          if (role) {
-            np = { ...np, role };
-            next = "ask_intent";
-            reply = "What brings you here — exploring, hiring, or partnership?";
-          } else
-            reply = "Your role — recruiter, founder, engineer, or investor?";
-        } else if (step === "ask_intent") {
-          np = { ...np, intent: extractIntent(msg), totalMessages: 0 };
-          next = "ready";
-          reply = `Got it. ${np.name ? `${np.name}, a` : "A"}sk me anything about Amit's projects, stack, or how to work with him.`;
-        }
-        setProfile(np);
-        setOnboardStep(next);
-        setTimeout(() => {
-          getStore().addMessage({ role: "ai", text: reply, ts: Date.now() });
-          speak(reply);
-        }, 280);
-        return;
-      }
-
-      // ── Normal chat ──────────────────────────────────────────────────────
-      if (s.userProfile)
-        updateProfile({
-          totalMessages: (s.userProfile.totalMessages || 0) + 1,
-          lastSeen: new Date().toISOString(),
-        });
-      const instant = detectInstantAnswer(msg);
-      if (instant) {
-        addMessage({ role: "user", text: msg, ts: Date.now() });
-        setTimeout(() => {
-          getStore().addMessage({ role: "ai", text: instant, ts: Date.now() });
-          speak(instant);
-        }, 100);
-        return;
-      }
-      const snap = [...s.messages];
-      addMessage({ role: "user", text: msg, ts: Date.now() });
-      setIsLoading(true);
-      setVoiceState("thinking");
-      try {
-        const reply = await askAura(msg, s.userProfile, snap, setError);
-        getStore().addMessage({ role: "ai", text: reply, ts: Date.now() });
-        speak(reply);
-      } catch {
-        const fb = "Ask about Amit's projects, tech stack, or how to hire him.";
-        getStore().addMessage({ role: "ai", text: fb, ts: Date.now() });
-        speak(fb);
-      } finally {
-        setIsLoading(false);
-        setVoiceState("idle");
-      }
+  const sr = useSpeechRecognition({
+    voiceState: vs.voiceState,
+    voiceStateRef: vs.voiceStateRef,
+    setVoiceState: vs.setVoiceState,
+    isOpen: chat.isOpen,
+    isLoading: chat.isLoading,
+    micEnabled: chat.micEnabled,
+    onFinalTranscript: (text) => {
+      profiler.trackMessage(text);
+      profiler.stopAnalysis();
+      chat.sendMessage(text);
     },
-    [addMessage, updateProfile, setProfile, speak, getStore],
-  );
+    onInterimTranscript: chat.setTranscript,
+    onLanguageDetected: (lang) => profiler.trackMessage("", lang),
+  });
 
-  // Keep sendRef current
+  // ── Fade timer for last AI text ────────────────────────────────────────────
+  const [showAiText, setShowAiText] = useState(false);
+  const fadeTimer = useRef<ReturnType<typeof setTimeout>>();
+
   useEffect(() => {
-    sendRef.current = sendMessage;
-  }, [sendMessage]);
+    if (chat.lastAiText) {
+      setShowAiText(true);
+      clearTimeout(fadeTimer.current);
+      fadeTimer.current = setTimeout(() => setShowAiText(false), 14000);
+    }
+    return () => clearTimeout(fadeTimer.current);
+  }, [chat.lastAiText]);
 
-  // ── Render ────────────────────────────────────────────────────────────────
-  const sendColor = isOnboard
-    ? "linear-gradient(155deg,#7B2FBE 0%,#5a1fa0 60%,#3d1070 100%)"
-    : "linear-gradient(155deg,#F47521 0%,#d4661a 60%,#a84e10 100%)";
+  // ── Orb tap handler ────────────────────────────────────────────────────────
+  const handleOrbTap = useCallback(() => {
+    if (!chat.isOpen) {
+      chat.open();
+      return;
+    }
+    if (vs.canStop) {
+      chat.stopAll();
+      vs.setVoiceState("idle");
+      return;
+    }
+    if (vs.isListening) {
+      sr.stopListening();
+      return;
+    }
+    // idle → start listening
+    profiler.startAnalysis();
+    sr.startListening();
+  }, [chat, vs, sr, profiler]);
 
-  return (
-    <>
-      {/* End screen */}
-      {showEnd && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 10001,
-            background: "rgba(3,2,8,.96)",
-            backdropFilter: "blur(30px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
+  // ── Close handler ──────────────────────────────────────────────────────────
+  const handleClose = useCallback(() => {
+    chat.close();
+  }, [chat]);
+
+  // ── Mute toggle ────────────────────────────────────────────────────────────
+  const [muted, setMuted] = useState(false);
+  const toggleMute = useCallback(() => {
+    setMuted((m) => {
+      const next = !m;
+      chat.micEnabled.current = !next;
+      if (next) {
+        sr.abortListening();
+        vs.setVoiceState("idle");
+      }
+      return next;
+    });
+  }, [chat.micEnabled, sr, vs]);
+
+  // ── Orb size ───────────────────────────────────────────────────────────────
+  const [orbSize, setOrbSize] = useState(220);
+  useEffect(() => {
+    const calc = () => {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const base = Math.min(vw, vh);
+      setOrbSize(Math.max(160, Math.min(280, base * 0.42)));
+    };
+    calc();
+    window.addEventListener("resize", calc);
+    return () => window.removeEventListener("resize", calc);
+  }, []);
+
+  // ── Not open: show launcher orb ────────────────────────────────────────────
+  if (!chat.isOpen) {
+    return (
+      <>
+        {/* End card overlay */}
+        {chat.showEndCard && (
           <div
             style={{
-              maxWidth: 340,
-              width: "90%",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 20,
-              padding: 32,
-              textAlign: "center",
-              animation: "acwFade .4s cubic-bezier(.34,1.4,.64,1) forwards",
-            }}
-          >
-            <AuraIcon size={52} />
-            <div>
-              <p
-                style={{
-                  fontSize: 15,
-                  fontWeight: 800,
-                  color: "#fff",
-                  margin: "0 0 5px",
-                }}
-              >
-                {userProfile?.name
-                  ? `Thanks, ${userProfile.name}.`
-                  : "Session complete."}
-              </p>
-              {endSummary && (
-                <p
-                  style={{
-                    fontSize: 12,
-                    color: "rgba(255,255,255,.45)",
-                    margin: 0,
-                    lineHeight: 1.72,
-                  }}
-                >
-                  {endSummary}
-                </p>
-              )}
-            </div>
-            <div
-              style={{
-                width: "100%",
-                display: "flex",
-                flexDirection: "column",
-                gap: 9,
-              }}
-            >
-              <a
-                href="mailto:amit98ch@gmail.com"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "14px 20px",
-                  borderRadius: 14,
-                  background: "rgba(244,117,33,.12)",
-                  border: "1px solid rgba(244,117,33,.28)",
-                  color: "#F47521",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  textDecoration: "none",
-                }}
-              >
-                Connect with Amit
-              </a>
-              <a
-                href={BMC_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "14px 20px",
-                  borderRadius: 14,
-                  background: "rgba(255,213,0,.08)",
-                  border: "1px solid rgba(255,213,0,.22)",
-                  color: "rgba(255,213,50,.88)",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  textDecoration: "none",
-                }}
-              >
-                Buy Amit a Coffee ☕
-              </a>
-            </div>
-            <button
-              onClick={() => setShowEnd(false)}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "rgba(255,255,255,.25)",
-                fontSize: 12,
-                padding: "6px 16px",
-              }}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Fixed positioner */}
-      <div
-        style={{
-          position: "fixed",
-          zIndex: 9999,
-          ...(isMobile && isOpen
-            ? { top: 0, left: 0 }
-            : !isOpen
-              ? { bottom: 24, right: 24 }
-              : { bottom: 20, right: 20 }),
-        }}
-      >
-        {/* Halo (orb state) */}
-        {!isOpen && (
-          <div
-            aria-hidden
-            style={{
-              position: "absolute",
+              position: "fixed",
               inset: 0,
-              borderRadius: "50%",
-              background:
-                "radial-gradient(circle,rgba(244,117,33,.22) 0%,transparent 70%)",
-              filter: "blur(14px)",
-              transform: "scale(1.6)",
-              animation: "acwHalo 3.8s ease-in-out infinite",
-              pointerEvents: "none",
-            }}
-          />
-        )}
-
-        {/* Chat count badge */}
-        {!isOpen && (
-          <div
-            style={{
-              position: "absolute",
-              top: -4,
-              right: -4,
-              zIndex: 1,
-              width: 18,
-              height: 18,
-              borderRadius: "50%",
-              background: convoLeft === 0 ? "#ef4444" : "#F47521",
+              zIndex: 9999,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 9,
-              fontWeight: 800,
-              color: "#fff",
-              boxShadow: "0 0 8px rgba(244,117,33,.55)",
-              pointerEvents: "none",
+              background: "rgba(3,1,8,0.88)",
             }}
+            onClick={() => chat.setShowEndCard(false)}
           >
-            {convoLeft}
+            <Glass
+              style={{
+                padding: "28px 32px",
+                maxWidth: 360,
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: 28, marginBottom: 8 }}>🎌</div>
+              <div
+                style={{
+                  color: "rgba(255,255,255,0.9)",
+                  fontSize: 15,
+                  fontWeight: 600,
+                  marginBottom: 10,
+                }}
+              >
+                Session Complete
+              </div>
+              {chat.endSummary && (
+                <div
+                  style={{
+                    color: "rgba(255,255,255,0.55)",
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                    marginBottom: 14,
+                  }}
+                >
+                  {chat.endSummary}
+                </div>
+              )}
+              <div style={{ color: "rgba(244,117,33,0.7)", fontSize: 12 }}>
+                Tap anywhere to dismiss
+              </div>
+            </Glass>
           </div>
         )}
 
-        {/* ─── Animated container — CSS transition, React owns values ─────── */}
+        {/* Launcher button */}
         <div
-          role={!isOpen ? "button" : undefined}
-          aria-label={!isOpen ? "Open Aura AI chat" : undefined}
-          tabIndex={!isOpen ? 0 : undefined}
-          onClick={!isOpen ? open : undefined}
-          onKeyDown={
-            !isOpen
-              ? (e) => {
-                  if (e.key === "Enter" || e.key === " ") open();
-                }
-              : undefined
-          }
+          onClick={handleOrbTap}
           style={{
-            ...containerStyle,
-            position: "relative",
-            overflow: "hidden",
-            cursor: !isOpen ? "pointer" : "default",
-            animation: !isOpen ? "acwFloat 4.2s ease-in-out infinite" : "none",
-            fontFamily: "inherit",
+            position: "fixed",
+            bottom: 28,
+            right: 28,
+            zIndex: 9990,
+            cursor: "pointer",
+            transition: "transform 0.3s ease",
           }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.transform = "scale(1.08)")
+          }
+          onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
+          role="button"
+          aria-label="Open Aura voice assistant"
         >
-          {/* Plasma orb — always mounted, fades out when open */}
+          <AuraOrb size={72} mode="idle" />
           <div
-            aria-hidden
             style={{
               position: "absolute",
-              top: 0,
-              left: 0,
-              width: ORB,
-              height: ORB,
-              opacity: isOpen ? 0 : 1,
-              transition: "opacity .2s",
+              bottom: -6,
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: "rgba(12,8,18,0.8)",
+              borderRadius: 8,
+              padding: "3px 10px",
+              fontSize: 10,
+              color: "rgba(244,117,33,0.8)",
+              whiteSpace: "nowrap",
+              border: "1px solid rgba(244,117,33,0.15)",
+            }}
+          >
+            Tap to talk
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── Full-screen voice interface ────────────────────────────────────────────
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9998,
+        background:
+          "radial-gradient(ellipse at center, rgba(12,6,20,0.97) 0%, rgba(3,1,8,0.99) 100%)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: "'Inter','Noto Sans JP',system-ui,sans-serif",
+        overflow: "hidden",
+        animation: "auraFadeIn 0.4s ease-out",
+      }}
+    >
+      <style>{`
+        @keyframes auraFadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes auraPulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+        @keyframes auraSlideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes auraBreathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.03); } }
+      `}</style>
+
+      {/* ── Top bar: close + user badge + offline ──────────────────────────── */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "16px 20px",
+          zIndex: 10,
+        }}
+      >
+        {/* User badge */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {chat.userProfile?.name && (
+            <Glass
+              style={{
+                padding: "5px 14px",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                borderRadius: 20,
+              }}
+            >
+              <div
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: "50%",
+                  background: "linear-gradient(135deg, #F47521, #7B2FBE)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "#fff",
+                }}
+              >
+                {chat.userProfile.name[0]?.toUpperCase()}
+              </div>
+              <span
+                style={{
+                  color: "rgba(255,255,255,0.75)",
+                  fontSize: 13,
+                  fontWeight: 500,
+                }}
+              >
+                {chat.userProfile.name}
+              </span>
+              {chat.userProfile.sessionCount > 1 && (
+                <span style={{ color: "rgba(244,117,33,0.5)", fontSize: 10 }}>
+                  #{chat.userProfile.sessionCount}
+                </span>
+              )}
+            </Glass>
+          )}
+
+          {/* Offline indicator */}
+          {chat.offlineIndicator && (
+            <Glass
+              style={{
+                padding: "4px 12px",
+                borderRadius: 14,
+                borderColor: "rgba(220,40,60,0.25)",
+              }}
+            >
+              <span
+                style={{
+                  color: "rgba(220,40,60,0.8)",
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              >
+                オフライン • Offline
+              </span>
+            </Glass>
+          )}
+        </div>
+
+        {/* Close */}
+        <button
+          onClick={handleClose}
+          style={{
+            background: "rgba(255,255,255,0.06)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: "50%",
+            width: 36,
+            height: 36,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            color: "rgba(255,255,255,0.5)",
+            fontSize: 18,
+            transition: "all 0.2s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "rgba(255,255,255,0.12)";
+            e.currentTarget.style.color = "rgba(255,255,255,0.8)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+            e.currentTarget.style.color = "rgba(255,255,255,0.5)";
+          }}
+          aria-label="Close"
+        >
+          ✕
+        </button>
+      </div>
+
+      {/* ── Last AI response (floating, fades) ─────────────────────────────── */}
+      {showAiText && chat.lastAiText && (
+        <div
+          style={{
+            position: "absolute",
+            top: "12%",
+            left: "50%",
+            transform: "translateX(-50%)",
+            maxWidth: "min(85vw, 480px)",
+            zIndex: 5,
+            animation: "auraSlideUp 0.5s ease-out",
+            transition: "opacity 0.8s ease",
+          }}
+        >
+          <Glass style={{ padding: "16px 22px", textAlign: "center" }}>
+            <div
+              style={{
+                color: "rgba(255,255,255,0.88)",
+                fontSize: 15,
+                lineHeight: 1.7,
+                fontWeight: 400,
+                letterSpacing: 0.2,
+              }}
+            >
+              {chat.lastAiText}
+            </div>
+          </Glass>
+        </div>
+      )}
+
+      {/* ── Orb ────────────────────────────────────────────────────────────── */}
+      <div
+        onClick={handleOrbTap}
+        style={{
+          cursor: "pointer",
+          position: "relative",
+          animation: vs.isIdle
+            ? "auraBreathe 4s ease-in-out infinite"
+            : undefined,
+          transition: "transform 0.3s ease",
+        }}
+        role="button"
+        aria-label={
+          vs.canStop
+            ? "Stop"
+            : vs.isListening
+              ? "Stop listening"
+              : "Tap to speak"
+        }
+      >
+        <AuraOrb size={orbSize} mode={vs.voiceState} />
+
+        {/* Stop overlay */}
+        {vs.canStop && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
               pointerEvents: "none",
             }}
           >
-            <PlasmaOrb size={ORB} mode={orbMode} />
-          </div>
-
-          {/* Chat panel — only mounted once open (chatReady) */}
-          {chatReady && (
             <div
               style={{
-                position: "absolute",
-                inset: 0,
-                opacity: isOpen ? 1 : 0,
-                transition: "opacity .2s .1s",
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                background: "rgba(220,40,60,0.2)",
+                border: "2px solid rgba(220,40,60,0.5)",
                 display: "flex",
-                flexDirection: "column",
-                pointerEvents: isOpen ? "auto" : "none",
+                alignItems: "center",
+                justifyContent: "center",
+                animation: "auraPulse 1.5s ease-in-out infinite",
               }}
             >
-              {/* Daily limit overlay */}
-              {limitHit && !sessionCounted.current && (
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    zIndex: 20,
-                    background: "rgba(3,2,8,.97)",
-                    backdropFilter: "blur(20px)",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 20,
-                    padding: 28,
-                    textAlign: "center",
-                  }}
-                >
-                  <div style={{ fontSize: 15, fontWeight: 800, color: "#fff" }}>
-                    Daily limit reached
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "rgba(255,255,255,.38)",
-                      lineHeight: 1.72,
-                    }}
-                  >
-                    {DAILY_LIMIT} conversations/day. Resets at midnight.
-                  </div>
-                  <a
-                    href={BMC_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      padding: "12px 20px",
-                      borderRadius: 12,
-                      background: "rgba(255,213,0,.09)",
-                      border: "1px solid rgba(255,213,0,.22)",
-                      color: "rgba(255,213,50,.88)",
-                      fontSize: 13,
-                      fontWeight: 600,
-                      textDecoration: "none",
-                    }}
-                  >
-                    Buy Amit a Coffee ☕
-                  </a>
-                  <button
-                    onClick={close}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      color: "rgba(255,255,255,.22)",
-                      fontSize: 12,
-                    }}
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              )}
-
-              {/* Header */}
               <div
                 style={{
-                  flexShrink: 0,
-                  padding: isMobile
-                    ? "env(safe-area-inset-top,44px) 15px 12px"
-                    : "12px 15px",
-                  background:
-                    "linear-gradient(180deg,rgba(244,117,33,.065) 0%,transparent 100%)",
-                  borderBottom: "1px solid rgba(255,255,255,.05)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
+                  width: 14,
+                  height: 14,
+                  borderRadius: 3,
+                  background: "rgba(220,40,60,0.8)",
                 }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                  <AuraIcon size={30} />
-                  <div>
-                    <div
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: "#fff",
-                        letterSpacing: "-.01em",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      Aura
-                      {isOnboard && (
-                        <span
-                          style={{
-                            fontSize: 8,
-                            color: "#7B2FBE",
-                            fontWeight: 600,
-                            letterSpacing: ".08em",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          Setup
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 8,
-                        fontWeight: 600,
-                        letterSpacing: ".08em",
-                        textTransform: "uppercase",
-                        color: error
-                          ? "#ef4444"
-                          : voiceState !== "idle"
-                            ? "#F47521"
-                            : "rgba(244,117,33,.4)",
-                        animation:
-                          voiceState !== "idle"
-                            ? "acwBlink 1.2s ease-in-out infinite"
-                            : "none",
-                      }}
-                    >
-                      {status}
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-                  {/* User badge */}
-                  {userProfile?.name && (
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 5,
-                        padding: "3px 8px",
-                        borderRadius: 99,
-                        background: "rgba(123,47,190,.1)",
-                        border: "1px solid rgba(123,47,190,.2)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 16,
-                          height: 16,
-                          borderRadius: "50%",
-                          background: "linear-gradient(135deg,#7B2FBE,#F47521)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: 8,
-                          color: "#fff",
-                          fontWeight: 800,
-                        }}
-                      >
-                        {userProfile.name[0].toUpperCase()}
-                      </div>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color: "rgba(255,255,255,.55)",
-                          fontWeight: 600,
-                          maxWidth: 80,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {userProfile.name}
-                        {userProfile.company ? ` · ${userProfile.company}` : ""}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 8,
-                          color: convoLeft === 0 ? "#ef4444" : "#F47521",
-                          background:
-                            convoLeft === 0
-                              ? "rgba(239,68,68,.14)"
-                              : "rgba(244,117,33,.14)",
-                          padding: "1px 5px",
-                          borderRadius: 99,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {convoLeft}/{DAILY_LIMIT}
-                      </span>
-                    </div>
-                  )}
-                  {/* TTS toggle */}
-                  <button
-                    className="acw-ib"
-                    onClick={() => {
-                      setAutoSpeak((v) => !v);
-                      stopSpeak();
-                    }}
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 7,
-                      border: "none",
-                      cursor: "pointer",
-                      background: autoSpeak
-                        ? "rgba(244,117,33,.12)"
-                        : "transparent",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke={autoSpeak ? "#F47521" : "rgba(255,255,255,.3)"}
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                    >
-                      {autoSpeak ? (
-                        <>
-                          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                          <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
-                        </>
-                      ) : (
-                        <>
-                          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                          <line x1="23" y1="9" x2="17" y2="15" />
-                          <line x1="17" y1="9" x2="23" y2="15" />
-                        </>
-                      )}
-                    </svg>
-                  </button>
-                  {/* Stop speaking */}
-                  {voiceState === "speaking" && (
-                    <button
-                      className="acw-ib"
-                      onClick={stopSpeak}
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 7,
-                        border: "none",
-                        cursor: "pointer",
-                        background: "rgba(244,117,33,.1)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <svg
-                        width="10"
-                        height="10"
-                        viewBox="0 0 24 24"
-                        fill="#F47521"
-                      >
-                        <rect x="4" y="4" width="16" height="16" rx="2" />
-                      </svg>
-                    </button>
-                  )}
-                  {/* Close */}
-                  <button
-                    className="acw-ib"
-                    onClick={close}
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 7,
-                      border: "none",
-                      cursor: "pointer",
-                      background: "transparent",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="rgba(255,255,255,.38)"
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                    >
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              {/* Onboard progress */}
-              {isOnboard && (
-                <div
-                  style={{
-                    flexShrink: 0,
-                    padding: "6px 15px 4px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 5,
-                    background: "rgba(123,47,190,.03)",
-                    borderBottom: "1px solid rgba(123,47,190,.08)",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 8,
-                      color: "rgba(255,255,255,.28)",
-                      fontWeight: 600,
-                      letterSpacing: ".06em",
-                    }}
-                  >
-                    SETUP
-                  </span>
-                  {ONBOARD_STEPS.map((_, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        flex: 1,
-                        height: 2,
-                        borderRadius: 1,
-                        background:
-                          i <= onbIdx ? "#7B2FBE" : "rgba(255,255,255,.06)",
-                        transition: "background .3s",
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Messages */}
-              <div
-                className="acw-sc"
-                style={{
-                  flex: 1,
-                  overflowY: "auto",
-                  padding: "14px 12px",
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-              >
-                {messages.length <= 1 && (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: 16,
-                      padding: "22px 0 10px",
-                      textAlign: "center",
-                    }}
-                  >
-                    <AuraIcon size={52} />
-                    <div>
-                      <p
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 800,
-                          color: "#F47521",
-                          margin: "0 0 5px",
-                          letterSpacing: "-.02em",
-                        }}
-                      >
-                        Aura
-                      </p>
-                      <p
-                        style={{
-                          fontSize: 12,
-                          color: "rgba(255,255,255,.35)",
-                          margin: 0,
-                          lineHeight: 1.65,
-                        }}
-                      >
-                        Amit Chakraborty's AI. Listening — speak or type.
-                      </p>
-                    </div>
-                    {!isOnboard && (
-                      <div
-                        style={{
-                          width: "100%",
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 5,
-                        }}
-                      >
-                        <p
-                          style={{
-                            fontSize: 8,
-                            color: "rgba(255,255,255,.28)",
-                            textTransform: "uppercase",
-                            letterSpacing: ".14em",
-                            margin: "2px 0 0",
-                            textAlign: "left",
-                          }}
-                        >
-                          Suggested
-                        </p>
-                        {SUGGESTIONS.map((sg) => (
-                          <button
-                            key={sg}
-                            className="acw-sug"
-                            onClick={() => sendMessage(sg)}
-                            style={{
-                              width: "100%",
-                              textAlign: "left",
-                              padding: "8px 12px",
-                              borderRadius: 9,
-                              background: "rgba(244,117,33,.04)",
-                              border: "1px solid rgba(244,117,33,.12)",
-                              color: "rgba(255,255,255,.58)",
-                              fontSize: 12,
-                              cursor: "pointer",
-                              transition: "all .15s",
-                            }}
-                          >
-                            <span
-                              style={{
-                                color: "rgba(244,117,33,.65)",
-                                marginRight: 6,
-                                fontSize: 10,
-                              }}
-                            >
-                              ▶
-                            </span>
-                            {sg}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {messages.map((m, i) => (
-                  <MsgBubble key={`${m.ts}-${i}`} m={m} onboard={isOnboard} />
-                ))}
-                {isLoading && <Typing />}
-                <div ref={chatEndRef} />
-              </div>
-
-              {/* Quick chips */}
-              {messages.length > 0 && !isOnboard && (
-                <div
-                  style={{
-                    flexShrink: 0,
-                    padding: "5px 12px",
-                    borderTop: "1px solid rgba(255,255,255,.04)",
-                    display: "flex",
-                    gap: 4,
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                  }}
-                >
-                  {CHIPS.map((c) => (
-                    <button
-                      key={c}
-                      className="acw-chip"
-                      onClick={() => sendMessage(c)}
-                      disabled={isLoading}
-                      style={{
-                        fontSize: 8,
-                        fontFamily: "monospace",
-                        padding: "2px 7px",
-                        borderRadius: 99,
-                        background: "transparent",
-                        border: "1px solid rgba(244,117,33,.15)",
-                        color: "rgba(244,117,33,.65)",
-                        cursor: "pointer",
-                        transition: "all .15s",
-                      }}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                  {showBMC && (
-                    <a
-                      href={BMC_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        marginLeft: "auto",
-                        fontSize: 8,
-                        fontFamily: "monospace",
-                        padding: "2px 8px",
-                        borderRadius: 99,
-                        background: "rgba(255,213,0,.07)",
-                        border: "1px solid rgba(255,213,0,.18)",
-                        color: "rgba(255,210,40,.7)",
-                        textDecoration: "none",
-                      }}
-                    >
-                      ☕ Coffee
-                    </a>
-                  )}
-                </div>
-              )}
-
-              {/* Input bar */}
-              <div
-                style={{
-                  flexShrink: 0,
-                  background: "rgba(5,3,9,.94)",
-                  backdropFilter: "blur(28px) saturate(150%)",
-                  borderTop: isOnboard
-                    ? "1px solid rgba(123,47,190,.15)"
-                    : "1px solid rgba(255,255,255,.05)",
-                  padding: isMobile
-                    ? `12px 12px max(20px,env(safe-area-inset-bottom,20px))`
-                    : "11px 12px 14px",
-                }}
-              >
-                <div style={{ position: "relative", height: 48 }}>
-                  {/* Text input layer */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 7,
-                      opacity: isVoiceOn ? 0 : 1,
-                      transform: isVoiceOn
-                        ? "translateY(5px) scale(.97)"
-                        : "none",
-                      transition: "opacity .22s,transform .22s",
-                      pointerEvents: isVoiceOn ? "none" : "auto",
-                    }}
-                  >
-                    <div
-                      className={isOnboard ? "acw-ob" : ""}
-                      style={{
-                        flex: 1,
-                        height: 48,
-                        display: "flex",
-                        alignItems: "center",
-                        borderRadius: 24,
-                        background: "rgba(255,255,255,.038)",
-                        border: isOnboard
-                          ? "1px solid rgba(123,47,190,.35)"
-                          : "1px solid rgba(255,255,255,.065)",
-                        boxShadow: "inset 0 2px 5px rgba(0,0,0,.3)",
-                        overflow: "hidden",
-                        cursor: "text",
-                      }}
-                      onClick={() => inputRef.current?.focus()}
-                    >
-                      {/* Mic button */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          voiceState === "listening"
-                            ? stopListening()
-                            : startListening();
-                        }}
-                        style={{
-                          flexShrink: 0,
-                          width: 44,
-                          height: 48,
-                          background: "none",
-                          border: "none",
-                          cursor: SR ? "pointer" : "default",
-                          opacity: SR ? 1 : 0.3,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          color:
-                            voiceState === "listening"
-                              ? "#ef4444"
-                              : isOnboard
-                                ? "#7B2FBE"
-                                : "#F47521",
-                        }}
-                      >
-                        <svg
-                          width="13"
-                          height="13"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.2"
-                          strokeLinecap="round"
-                        >
-                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                          <line x1="12" y1="19" x2="12" y2="23" />
-                          <line x1="8" y1="23" x2="16" y2="23" />
-                        </svg>
-                      </button>
-                      <div
-                        style={{
-                          width: 1,
-                          height: 14,
-                          background: "rgba(255,255,255,.05)",
-                          flexShrink: 0,
-                        }}
-                      />
-                      <input
-                        ref={inputRef}
-                        className="acw-inp"
-                        type="text"
-                        placeholder={placeholder}
-                        value={inputText}
-                        onChange={(e) => {
-                          setInputText(e.target.value);
-                          if (error) setError(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !loadingRef.current)
-                            sendMessage(inputText);
-                        }}
-                        disabled={isLoading}
-                        style={{
-                          flex: 1,
-                          height: "100%",
-                          padding: "0 11px",
-                          fontSize: 13,
-                          fontFamily: "inherit",
-                        }}
-                      />
-                    </div>
-                    <button
-                      className="acw-send"
-                      onClick={() => sendMessage(inputText)}
-                      disabled={isLoading || !inputText.trim()}
-                      style={{
-                        flexShrink: 0,
-                        width: 48,
-                        height: 48,
-                        borderRadius: "50%",
-                        background: sendColor,
-                        border: isOnboard
-                          ? "1px solid rgba(123,47,190,.3)"
-                          : "1px solid rgba(200,90,20,.3)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        cursor: "pointer",
-                        transition: "all .22s cubic-bezier(.34,1.4,.64,1)",
-                        boxShadow:
-                          "inset 0 1px 0 rgba(255,255,255,.28),0 0 14px rgba(244,117,33,.15)",
-                      }}
-                    >
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="#fff"
-                        strokeWidth="2.4"
-                        strokeLinecap="round"
-                      >
-                        <line x1="22" y1="2" x2="11" y2="13" />
-                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                      </svg>
-                    </button>
-                  </div>
-
-                  {/* Voice waveform layer */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 14,
-                      opacity: isVoiceOn ? 1 : 0,
-                      transform: isVoiceOn
-                        ? "none"
-                        : "translateY(-5px) scale(.97)",
-                      transition: "opacity .22s,transform .22s",
-                      pointerEvents: isVoiceOn ? "auto" : "none",
-                    }}
-                  >
-                    {isVoiceOn && (
-                      <>
-                        <div
-                          style={{
-                            flex: 1,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 3,
-                            justifyContent: "center",
-                          }}
-                        >
-                          {Array.from({ length: 12 }, (_, i) => (
-                            <div
-                              key={i}
-                              style={{
-                                width: 3,
-                                height: 18,
-                                borderRadius: 2,
-                                background:
-                                  voiceState === "listening"
-                                    ? "#F47521"
-                                    : "#7B2FBE",
-                                animation: `acwWave ${voiceState === "listening" ? ".6s" : ".7s"} ${i * (voiceState === "listening" ? 50 : 60)}ms ease-in-out infinite`,
-                              }}
-                            />
-                          ))}
-                        </div>
-                        <button
-                          onClick={
-                            voiceState === "listening"
-                              ? stopListening
-                              : stopSpeak
-                          }
-                          style={{
-                            width: 48,
-                            height: 48,
-                            borderRadius: "50%",
-                            background:
-                              voiceState === "listening"
-                                ? "rgba(239,68,68,.18)"
-                                : "rgba(244,117,33,.14)",
-                            border: `1px solid ${voiceState === "listening" ? "rgba(239,68,68,.3)" : "rgba(244,117,33,.28)"}`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            cursor: "pointer",
-                            flexShrink: 0,
-                          }}
-                        >
-                          <svg
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill={
-                              voiceState === "listening" ? "#ef4444" : "#F47521"
-                            }
-                          >
-                            <rect x="5" y="5" width="14" height="14" rx="2" />
-                          </svg>
-                        </button>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Live transcript */}
-                  {transcript && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        bottom: "calc(100% + 8px)",
-                        left: 0,
-                        right: 0,
-                        padding: "8px 14px",
-                        borderRadius: 12,
-                        background: "rgba(7,4,12,.95)",
-                        border: "1px solid rgba(244,117,33,.18)",
-                        color: "rgba(255,255,255,.7)",
-                        fontSize: 12,
-                        lineHeight: 1.55,
-                        animation: "acwSlide .2s ease forwards",
-                      }}
-                    >
-                      <span
-                        style={{
-                          color: "rgba(244,117,33,.5)",
-                          fontSize: 8,
-                          fontWeight: 700,
-                          letterSpacing: ".1em",
-                          textTransform: "uppercase",
-                          display: "block",
-                          marginBottom: 3,
-                        }}
-                      >
-                        Hearing
-                      </span>
-                      {transcript}
-                    </div>
-                  )}
-                </div>
-              </div>
+              />
             </div>
-          )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Status text ────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          marginTop: 20,
+          textAlign: "center",
+          animation: "auraSlideUp 0.4s ease-out",
+        }}
+      >
+        <div
+          style={{
+            color: vs.isIdle
+              ? "rgba(255,255,255,0.35)"
+              : "rgba(244,117,33,0.85)",
+            fontSize: 13,
+            fontWeight: 500,
+            letterSpacing: 1.5,
+            transition: "color 0.3s",
+          }}
+        >
+          {vs.statusText}
         </div>
       </div>
-    </>
-  );
-};
 
-// Named export alias so the lazy import in index.tsx still works
-export { AuraChatWidget as SiriOrbNew };
+      {/* ── Live transcript (during listening) ─────────────────────────────── */}
+      {vs.isListening && chat.transcript && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "22%",
+            left: "50%",
+            transform: "translateX(-50%)",
+            maxWidth: "min(80vw, 400px)",
+            zIndex: 5,
+            animation: "auraSlideUp 0.3s ease-out",
+          }}
+        >
+          <Glass style={{ padding: "10px 18px", textAlign: "center" }}>
+            <div
+              style={{
+                color: "rgba(80,210,255,0.85)",
+                fontSize: 14,
+                fontStyle: "italic",
+                animation: "auraPulse 2s ease-in-out infinite",
+              }}
+            >
+              "{chat.transcript}"
+            </div>
+          </Glass>
+        </div>
+      )}
+
+      {/* ── Onboarding progress dots ───────────────────────────────────────── */}
+      {chat.isOnboard && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "15%",
+            left: "50%",
+            transform: "translateX(-50%)",
+            display: "flex",
+            gap: 8,
+            zIndex: 5,
+          }}
+        >
+          {ONBOARD_STEPS.map((step, i) => (
+            <div
+              key={step}
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background:
+                  i <= chat.onboardIndex
+                    ? "rgba(244,117,33,0.8)"
+                    : "rgba(255,255,255,0.15)",
+                transition: "all 0.4s ease",
+                transform: i === chat.onboardIndex ? "scale(1.3)" : "scale(1)",
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ── Bottom controls: mute + stop ───────────────────────────────────── */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 28,
+          left: "50%",
+          transform: "translateX(-50%)",
+          display: "flex",
+          gap: 16,
+          zIndex: 10,
+        }}
+      >
+        {/* Mute */}
+        <button
+          onClick={toggleMute}
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: "50%",
+            background: muted
+              ? "rgba(220,40,60,0.15)"
+              : "rgba(255,255,255,0.06)",
+            border: `1px solid ${muted ? "rgba(220,40,60,0.3)" : "rgba(255,255,255,0.1)"}`,
+            color: muted ? "rgba(220,40,60,0.8)" : "rgba(255,255,255,0.5)",
+            cursor: "pointer",
+            fontSize: 18,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            transition: "all 0.2s",
+          }}
+          aria-label={muted ? "Unmute" : "Mute"}
+        >
+          {muted ? "🔇" : "🎙"}
+        </button>
+
+        {/* Stop (only when active) */}
+        {vs.canStop && (
+          <button
+            onClick={() => {
+              chat.stopAll();
+              vs.setVoiceState("idle");
+            }}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              background: "rgba(220,40,60,0.15)",
+              border: "1px solid rgba(220,40,60,0.3)",
+              color: "rgba(220,40,60,0.8)",
+              cursor: "pointer",
+              fontSize: 16,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "all 0.2s",
+            }}
+            aria-label="Stop"
+          >
+            ■
+          </button>
+        )}
+      </div>
+
+      {/* ── API error indicator ────────────────────────────────────────────── */}
+      {chat.apiError && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 80,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 10,
+          }}
+        >
+          <Glass
+            style={{
+              padding: "6px 14px",
+              borderRadius: 12,
+              borderColor: "rgba(255,200,80,0.2)",
+            }}
+          >
+            <span style={{ color: "rgba(255,200,80,0.7)", fontSize: 11 }}>
+              {chat.apiError}
+            </span>
+          </Glass>
+        </div>
+      )}
+
+      {/* ── Remaining chats ────────────────────────────────────────────────── */}
+      {!chat.isOnboard && chat.convoLeft <= 10 && (
+        <div
+          style={{
+            position: "absolute",
+            top: "50%",
+            right: 16,
+            transform: "translateY(-50%)",
+            zIndex: 5,
+          }}
+        >
+          <Glass style={{ padding: "6px 10px", borderRadius: 10 }}>
+            <span style={{ color: "rgba(255,200,80,0.6)", fontSize: 10 }}>
+              {chat.convoLeft} left today
+            </span>
+          </Glass>
+        </div>
+      )}
+    </div>
+  );
+}

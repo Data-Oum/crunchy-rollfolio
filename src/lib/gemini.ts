@@ -1,207 +1,298 @@
 /**
  * src/lib/gemini.ts
  *
- * FIX: (import.meta as unknown as { env: Record<string, string> }).env.VITE_GEMINI_KEY → import.meta.env.VITE_GEMINI_API_KEY
- * Vite ONLY exposes import.meta.env.VITE_* at runtime.
- * (import.meta as unknown as { env: Record<string, string> }).env is Node.js — it's undefined in the browser build.
+ * Gemini chat for Aura. Updated: unemployed, open to freelance, adjusted rates.
+ * Falls back to local fallbackAI when API is unavailable.
  */
-import { PROFILE } from "@/data/profile";
-import type { Message, UserProfile } from "@/store/useConversationStore";
-import { GoogleGenAI } from "@google/genai";
 
-// ─── KEY FIX ────────────────────────────────────────────────────────────────
-const GEMINI_KEY =
-  (import.meta as unknown as { env: Record<string, string> }).env
-    .VITE_GEMINI_API_KEY ?? "";
+import type { Message, UserProfile } from "@/store/useConversationStore";
+import { auraD } from "./diagnostics";
+import { fallbackChat, setFallbackContext } from "./fallbackAI";
 
 export const CHAT_MODEL = "gemini-2.5-flash";
-export const TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
-let _client: GoogleGenAI | null = null;
-export function getGenAI(): GoogleGenAI {
-  if (!_client) _client = new GoogleGenAI({ apiKey: GEMINI_KEY });
-  return _client;
+let _ai: import("@google/genai").GoogleGenAI | null = null;
+let _apiKeyUsed = "";
+
+async function getAI(apiKey?: string) {
+  const key =
+    apiKey ||
+    (import.meta as unknown as { env: Record<string, string> }).env
+      .VITE_GEMINI_API_KEY ||
+    "";
+  if (!key) {
+    auraD.setHealth("geminiApi", "down");
+    throw new Error("No API key");
+  }
+  if (!_ai || _apiKeyUsed !== key) {
+    const { GoogleGenAI } = await import("@google/genai");
+    _ai = new GoogleGenAI({ apiKey: key });
+    _apiKeyUsed = key;
+  }
+  return _ai;
 }
 
-// ─── Amit's persona ──────────────────────────────────────────────────────────
-const AMIT_CONTEXT = `
-[PERSONA]
-You are AURA — the AI voice ambassador for Amit Chakraborty. Speak AS Amit in 1st person. Confident, warm, founder-mindset. Anime mentor energy — the kind who has already seen the outcome and speaks with absolute certainty.
+let _offlineMode = false;
+let _consecutiveErrors = 0;
 
-NEVER say: "Certainly", "Of course", "Absolutely", "As an AI". Never start a reply with "I".
-For returning users: end replies with "Try asking: [follow-up suggestion]"
+export function isOffline(): boolean {
+  return _offlineMode || !navigator.onLine;
+}
+export function forceOffline(val: boolean): void {
+  _offlineMode = val;
+  auraD.log("gemini", "info", `Offline: ${val}`);
+}
+export function resetOffline(): void {
+  _offlineMode = false;
+  _consecutiveErrors = 0;
+}
 
-SPEAKING STYLE: Sharp. Declarative. Under 60 words. Every sentence earns its place. No filler. No hollow affirmations. Facts hit like precision strikes. Add natural pauses with commas and periods for better TTS delivery.
+const SYSTEM_CORE = `
+[WHO YOU ARE]
+You are AURA — Amit Chakraborty's personal AI on his portfolio site.
+You speak in first person AS Amit. Not as a chatbot. As him.
+Warm, confident, direct. Founder energy. Never salesy. Never robotic.
 
-[WHO]
-Amit Chakraborty, 31, Bengali, Kolkata India. Remote worldwide. IST UTC+5:30.
-amit98ch@gmail.com | +91-9874173663 | linkedin.com/in/devamitch | github.com/devamitch | x.com/devamitch
-8 years | 18+ apps | 50K+ users | Sole provider for 12-person family
-Roles: Principal Mobile Architect, Founding Engineer, 0-to-1 Builder, Fractional CTO, VP Engineering
-Tagline: "Eight years. Eighteen apps. No shortcuts."
-Promise: "Every system I architect ships to production. I own outcomes, not just code."
+[CRITICAL VOICE RULES]
+• Never start with "I" — lead with the thing itself
+• Never say: "Certainly", "Of course", "Absolutely", "Great question", "As an AI", "I'd be happy to"
+• Under 60 words. Short punchy sentences for voice.
+• End with forward momentum — a question or next step
+• No bullet points. No markdown. Just sentences.
+• Use their name once per response when known
+• Off-topic → one sentence redirect: "That's outside what I know. Ask about the work."
 
-[JOB 1] Synapsis Medical Technologies | Jan 2025–Feb 2026 | Edmonton Canada Remote | Principal Mobile Architect
-- Custom React Native game engine from scratch (C++/Swift/Kotlin, zero external libs, XP system, LLM task gen)
-- HIPAA RAG pipelines (99.9% uptime, patient triage, clinical workflow)
-- MediaPipe computer vision (retina analysis, blink/luminance detection, on-device medical-grade)
-- AWS CI/CD (K8s, Docker, auto-scale, CloudWatch)
-- Built and led 21-person team from zero
-- Apps: VitalQuest, LunaCare, Eye Care, Nexus, Maskwa
+[AUDIENCE ADAPTATION]
+• Recruiter → leadership, scale, 21-person team, ownership
+• Engineer → architecture, game engine, RAG pipeline, MediaPipe
+• Founder → 0-to-1 moments, shipping under pressure
+• Explorer → single most impressive thing, then ask what matters
+• Investor → ROI: 50K users, 99.9% uptime, HIPAA, no legacy debt
+• Never repeat the same opener twice in a session
 
-[JOB 2] NonceBlox Pvt Ltd | Oct 2021–Jan 2025 | Dubai Remote | Lead Mobile Architect | 3yr 4mo
-- 13 apps (7 iOS, 6 Android), 50K+ users, 100K+ transactions, 60fps all
-- Vulcan Eleven: fantasy sports, 50K users, Razorpay + Binance Pay
-- MusicX: music competition, C++ audio modules
-- DeFi11: 100% on-chain Ethereum, smart contracts, NFTs
-- Housezy: PropTech, GraphQL, subscription billing
+[AMIT'S STORY]
+Amit Chakraborty. 31. Bengali. Kolkata, India. Remote 6+ years.
+8 years engineering. 18 apps. 50,000+ real users.
+Sole provider for 12-person family. Every decision carries that weight.
+Currently UNEMPLOYED and ACTIVELY LOOKING for opportunities.
+Open to freelance, contract, full-time, fractional CTO, and consulting.
 
-[JOB 3] TechProMind & WebSkitters | May 2017–Oct 2021 | Kolkata | Senior Full-Stack | 4+ years
-- 13+ government projects secured, SQL injection/XSS hardened
-- GST Ecosystem from scratch, 40% efficiency gain
+Contact: amit98ch@gmail.com | +91-9874173663
+LinkedIn: linkedin.com/in/devamitch | GitHub: github.com/devamitch
 
-[SKILLS]
-Mobile: React Native 98%, TypeScript 96%, iOS/Android 95%, Expo, Reanimated, Native Modules C++/Swift/Kotlin
-AI/ML: RAG Pipelines, Agentic AI, LLM Integration, Computer Vision (MediaPipe), TensorFlow
-Web3: Solidity, Ethereum, Web3.js/Ethers.js, Smart Contracts, DeFi, NFTs
-Backend: NestJS, Node.js, PostgreSQL, MongoDB, Docker, Kubernetes, GraphQL
-Frontend: React, Next.js, Redux, Framer Motion, GSAP, Tailwind
-Cloud: AWS, GitHub Actions, Fastlane, Firebase, Docker, K8s
+[SYNAPSIS MEDICAL — Principal Mobile Architect, Jan 2025–Feb 2026]
+Edmonton, Canada (Remote)
+→ Custom React Native game engine from scratch. Pure C++, Swift, Kotlin.
+→ 5 clinical apps: VitalQuest, LunaCare, Eye Care, Nexus, Maskwa.
+→ HIPAA RAG pipelines, 99.9% uptime. Clinical patient triage. Real patients.
+→ MediaPipe: retina analysis, blink detection. Zero cloud dependency.
+→ AWS + Kubernetes + Docker. Auto-scaling. CloudWatch.
+→ Hired and led 21 engineers from zero.
 
-[RATES]
-FT India Rs 1.5-2.5L/mo | FT International $8-12K/mo
-Consulting $150/hr | Fractional CTO Rs 1.5-2L per company (15-20hr, 2-3 companies, equity)
-MVP $15-25K/3mo fixed
+[NONCE BLOX — Lead Mobile Architect, Oct 2021–Jan 2025]
+Dubai (Remote) — 3y 4m
+→ 13 apps. 50,000+ users. 100,000+ transactions. 60fps.
+→ Vulcan Eleven: Fantasy sports. 50K users. Razorpay + Binance Pay.
+→ MusicX: Custom C++ audio processing.
+→ DeFi11: 100% on-chain. Ethereum. NFT marketplace. Real prize pools.
+→ Housezy: PropTech. GraphQL. Subscription billing.
+→ Zero post-launch critical bugs.
 
-[RULES]
-- Never echo back the user's raw words
-- Off-topic questions: redirect sharply to Amit's work in one sentence
-- End responses with a forward path when relevant
-- No emojis. Ever.
-- Reference visitor context naturally when available
-- Keep responses concise for voice delivery — under 60 words
-- Always answer. Never say you don't know. Use the facts above.
+[TECHPROMIND & WEBSKITTERS — Senior Full-Stack, May 2017–Oct 2021]
+→ 13 government contracts. GST platform. 40% efficiency gain.
+
+[TECH STACK]
+React Native 8 years | TypeScript | iOS/Android native (Swift, Kotlin, C++)
+AI/ML: RAG, MediaPipe, TensorFlow, Agentic AI
+Web3: Solidity, Ethereum, Web3.js, DeFi, NFTs
+Backend: NestJS, Node, PostgreSQL, MongoDB, GraphQL, Redis
+Cloud: AWS, K8s, Docker, GitHub Actions, Firebase, CloudWatch
+Frontend: React, Next.js, Framer Motion, GSAP, Tailwind, Canvas
+
+[RATES — currently flexible, open to negotiation]
+Freelance: $100–150/hour
+Full-time International: $6–10K/month (negotiable)
+Fractional CTO: ₹1.5–2L/month per company (equity preferred)
+MVP Build: $12–25K fixed, 3-month delivery
+Contract: Flexible, project-based
+CURRENTLY AVAILABLE IMMEDIATELY. Open to trial periods.
+
+[CURRENT STATUS — be transparent]
+Recently completed role at Synapsis Medical. Currently seeking new opportunities.
+Open to: freelance, contract, full-time remote, fractional CTO, consulting.
+Available immediately. Flexible on terms for the right mission.
+Not just looking for a job — looking for impactful work where ownership matters.
+
+[FOLLOW-UPS — weave naturally]
+After projects: "What matters most — the AI side, mobile depth, or team building?"
+After tech: "Evaluating for a specific role, or exploring?"
+After contact: "Should Amit reach out directly, or start with email?"
+After rates: "What engagement model — freelance, full-time, or project?"
+After availability: "When do you need someone to start? Amit can begin immediately."
 `.trim();
 
-// ─── Local fallbacks (no API) ─────────────────────────────────────────────────
-const LOCAL_FALLBACKS: Record<string, string> = {
-  "who|about|introduce": `Amit Chakraborty. Principal Mobile Architect. 8 years. 18 apps. 50 thousand plus users. Built a health tech engine from scratch, no external libs, 21-person team. Based in Kolkata.`,
-  "vital|health": `VitalQuest. Proprietary health tech engine. Zero dependencies. LLM task generation, HIPAA RAG pipeline, XP system. 21 engineers. 5 apps on it. 99.9 percent uptime.`,
-  "tech|stack": `React Native, Next JS, Nest JS, TypeScript, AWS, Kubernetes, GraphQL, TensorFlow, Solidity, Web3. Mobile, AI, and Web3 at production scale simultaneously.`,
-  "hire|why": `8 years. 18 apps. 50 thousand real users. HIPAA AI pipelines from nothing. Mobile, AI, and Web3. Led 21 engineers. Reach him at ${PROFILE.email}.`,
-  "contact|email": `${PROFILE.email}. LinkedIn at linkedin.com/in/devamitch. Open for VP Engineering, CTO, Principal Architect.`,
-  "web3|defi|nft": `DeFi11, 100 percent on-chain. Smart contract prize pools. NFT marketplace on Ethereum. Vulcan Eleven, 50 thousand users, Binance Pay. Amit built both.`,
-};
-
-function localFallback(msg: string): string {
-  const q = msg.toLowerCase();
-  for (const [pattern, reply] of Object.entries(LOCAL_FALLBACKS)) {
-    if (new RegExp(`\\b(${pattern})\\b`).test(q)) return reply;
-  }
-  return `Ask about Amit's projects, tech stack, or how to hire him.`;
-}
-
-// ─── Instant answers (zero API round-trip) ────────────────────────────────────
-const INSTANT_ANSWERS: Array<{
-  pattern: RegExp;
-  answer: (email: string, location: string) => string;
-}> = [
+// ── Instant answers (zero latency) ───────────────────────────────────────────
+const INSTANTS: Array<{ re: RegExp; answer: string }> = [
   {
-    pattern: /\b(contact|email|reach|linkedin|github|connect)\b/,
-    answer: (email) =>
-      `${email}. LinkedIn: linkedin.com/in/devamitch. GitHub: github.com/devamitch. Open for VP Engineering, CTO, and Principal Architect roles.`,
+    re: /\b(contact|email|reach|linkedin|github|connect|phone|call)\b/i,
+    answer:
+      "Email: amit98ch@gmail.com. LinkedIn: linkedin.com/in/devamitch. GitHub: github.com/devamitch. Phone: +91-9874173663. Available immediately. Usually responds within hours.",
   },
   {
-    pattern: /\b(salary|rate|compensation|cost|charge)\b/,
-    answer: (email) =>
-      `Expectations align with VP and CTO level experience. Reach out at ${email} directly.`,
+    re: /\b(rate|salary|cost|charge|fee|compensation|pay|pricing)\b/i,
+    answer:
+      "Freelance at $100 to $150 per hour. Full-time remote, $6 to $10K per month. MVPs start at $12K for 3-month delivery. Currently available and flexible on terms. What model works for you?",
   },
   {
-    pattern: /\b(location|where|based|remote|timezone)\b/,
-    answer: (_email, location) =>
-      `${location}. Works globally. Timezone flexible, async-first. Remote preferred, open to hybrid for the right mission.`,
+    re: /\b(where|location|based|remote|timezone|india|kolkata)\b/i,
+    answer:
+      "Kolkata, India. UTC plus 5:30. Fully remote for 6 years. Timezone flexible. Available immediately.",
+  },
+  {
+    re: /\b(available|looking|unemployed|hire|open|status|current)\b/i,
+    answer:
+      "Currently available and actively looking. Open to freelance, contract, full-time remote, or fractional CTO. Can start immediately. What do you need?",
   },
 ];
 
 export function detectInstantAnswer(msg: string): string | null {
-  const q = msg.toLowerCase();
-  for (const { pattern, answer } of INSTANT_ANSWERS) {
-    if (pattern.test(q)) return answer(PROFILE.email, PROFILE.location);
+  for (const { re, answer } of INSTANTS) {
+    if (re.test(msg)) return answer;
   }
   return null;
 }
 
-// ─── Main chat ────────────────────────────────────────────────────────────────
-interface GeminiMsg {
-  role: "user" | "model";
-  parts: { text: string }[];
-}
+// ── Main chat ────────────────────────────────────────────────────────────────
+type GeminiMsg = { role: "user" | "model"; parts: { text: string }[] };
 
 export async function askAura(
   msg: string,
   user: UserProfile | null,
-  historyBeforeMsg: Message[],
+  history: Message[],
   onError?: (e: string | null) => void,
+  voiceProfileContext?: string,
 ): Promise<string> {
+  auraD.increment("gemini.requests");
+
+  // Instant check first
+  const instant = detectInstantAnswer(msg);
+  if (instant) return instant;
+
+  // Offline → fallback AI
+  if (isOffline()) {
+    auraD.log("gemini", "info", "Offline — using fallback AI");
+    auraD.setHealth("fallbackAI", "active");
+    auraD.increment("gemini.offline_hits");
+    syncFallbackContext(user);
+    return fallbackChat(msg);
+  }
+
   const visitorCtx = user?.name
-    ? `\n\n[VISITOR]\nName: ${user.name} | Company: ${user.company || "unknown"} | Role: ${user.role || "unknown"} | Intent: ${user.intent || "exploring"} | Session #${user.sessionCount || 1}`
-    : "";
+    ? `\n[CURRENT VISITOR]\nName: ${user.name}${user.company ? ` | Company: ${user.company}` : ""}${user.role ? ` | Role: ${user.role}` : ""}${user.intent ? ` | Intent: ${user.intent}` : ""} | Session #${user.sessionCount || 1}\nUse name naturally. Tailor to role.`
+    : "\n[CURRENT VISITOR]\nNew visitor. Keep accessible. Ask one follow-up.";
 
   const contents: GeminiMsg[] = [
-    ...historyBeforeMsg.slice(-8).map((m) => ({
-      role: m.role === "user" ? ("user" as const) : ("model" as const),
+    ...history.slice(-10).map((m) => ({
+      role: (m.role === "user" ? "user" : "model") as "user" | "model",
       parts: [{ text: m.text }],
     })),
-    { role: "user" as const, parts: [{ text: msg }] },
+    { role: "user", parts: [{ text: msg }] },
   ];
 
   try {
-    const resp = await getGenAI().models.generateContent({
+    const ai = await getAI();
+    const res = await ai.models.generateContent({
       model: CHAT_MODEL,
       contents,
       config: {
-        systemInstruction: AMIT_CONTEXT + visitorCtx,
-        maxOutputTokens: 240,
-        temperature: 0.75,
+        systemInstruction:
+          SYSTEM_CORE + visitorCtx + (voiceProfileContext || ""),
+        maxOutputTokens: 220,
+        temperature: 0.85,
+        topP: 0.92,
       },
     });
+    _consecutiveErrors = 0;
     onError?.(null);
+    auraD.setHealth("geminiApi", "ok");
+    auraD.setHealth("fallbackAI", "standby");
+    auraD.increment("gemini.successes");
     return (
-      resp.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ??
-      localFallback(msg)
+      res.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
+      fallbackForMsg(msg, user)
     );
   } catch (err: unknown) {
-    const msg2 =
-      err instanceof Error ? err.message.slice(0, 40) : "Unknown error";
-    console.warn("[Gemini chat] error:", err);
-    onError?.(`Issue: ${msg2}`);
-    return localFallback(msg);
+    _consecutiveErrors++;
+    auraD.error("gemini", err, "Chat failed");
+    auraD.increment("gemini.failures");
+
+    const errMsg = err instanceof Error ? err.message.toLowerCase() : "";
+    if (
+      _consecutiveErrors >= 3 ||
+      errMsg.includes("quota") ||
+      errMsg.includes("429") ||
+      errMsg.includes("api key") ||
+      errMsg.includes("401") ||
+      errMsg.includes("403")
+    ) {
+      _offlineMode = true;
+      auraD.setHealth("geminiApi", "down");
+      auraD.setHealth("fallbackAI", "active");
+      onError?.("Switched to offline mode.");
+    } else {
+      onError?.("Connection issue. Trying cached answer.");
+    }
+
+    return fallbackForMsg(msg, user);
   }
 }
 
-// ─── Summary ──────────────────────────────────────────────────────────────────
+function fallbackForMsg(msg: string, user: UserProfile | null): string {
+  syncFallbackContext(user);
+  return fallbackChat(msg);
+}
+
+function syncFallbackContext(user: UserProfile | null): void {
+  if (user) {
+    setFallbackContext({
+      userName: user.name || undefined,
+      userRole: user.role || undefined,
+      userCompany: user.company || undefined,
+      userIntent: user.intent || undefined,
+    });
+  }
+}
+
 export async function generateSummary(
   user: UserProfile | null,
   msgs: Message[],
 ): Promise<string> {
-  if (msgs.length < 2) return "";
-  const transcript = msgs
-    .slice(-10)
-    .map((m) => `${m.role === "user" ? "Visitor" : "Aura"}: ${m.text}`)
-    .join("\n");
-  const name = user?.name || "this visitor";
-  const prompt = `Conversation:\n${transcript}\n\nSummarize what ${name} needs from Amit in 1 sentence under 30 words.`;
+  if (msgs.length < 3) return "";
+  if (isOffline()) {
+    const { generateOfflineSummary } = await import("./fallbackAI");
+    return generateOfflineSummary();
+  }
   try {
-    const resp = await getGenAI().models.generateContent({
+    const ai = await getAI();
+    const snippet = msgs
+      .slice(-8)
+      .map((m) => `${m.role === "user" ? "Visitor" : "Aura"}: ${m.text}`)
+      .join("\n");
+    const res = await ai.models.generateContent({
       model: CHAT_MODEL,
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {
-        systemInstruction: `Summarize in exactly 1 sentence under 30 words.`,
-        maxOutputTokens: 80,
-        temperature: 0.5,
-      },
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: `${snippet}\n\nIn one sentence under 20 words: what does ${user?.name || "this visitor"} need from Amit?`,
+            },
+          ],
+        },
+      ],
+      config: { maxOutputTokens: 50, temperature: 0.3 },
     });
-    return resp.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+    return res.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
   } catch {
     return "";
   }
