@@ -8,15 +8,6 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 gsap.registerPlugin(ScrollTrigger);
 
-const BADGE_COLORS: Record<string, string> = {
-  "FLAGSHIP · HEALTHTECH": "#C9A84C",
-  "AI PLATFORM": "#F5C842",
-  "WOMEN'S HEALTH": "#E8B4B8",
-  "SPORTS · FINTECH": "#FF6B35",
-  "WEB3 · DEFI": "#DAA520",
-  "MEDTECH": "#2196F3",
-};
-
 function MangaCard({ project, index }: { project: typeof PROFILE.projects[number]; index: number }) {
   const mx = useMotionValue(0);
   const my = useMotionValue(0);
@@ -141,13 +132,6 @@ export const AnimeShowcase = () => {
           });
         });
       }
-      const techItems = sectionRef.current?.querySelectorAll(".tech-tag");
-      if (techItems?.length) {
-        gsap.fromTo(techItems, { y: 20, opacity: 0, scale: 0.6 }, {
-          y: 0, opacity: 1, scale: 1, stagger: 0.015, duration: 0.4, ease: "power3.out",
-          scrollTrigger: { trigger: techItems[0], start: "top 85%" },
-        });
-      }
     }, sectionRef);
     return () => ctx.revert();
   }, []);
@@ -156,7 +140,7 @@ export const AnimeShowcase = () => {
     <section id="showcase" ref={sectionRef} className="relative py-32 overflow-hidden">
       <motion.div style={{ y: bgY }} className="absolute inset-0 pointer-events-none">
         <img src={animeBattle} alt="" className="w-full h-full object-cover opacity-[0.08]"
-          style={{ filter: "saturate(0.8)", mixBlendMode: "luminosity" }} />
+          style={{ filter: "saturate(0.8) hue-rotate(-10deg)", mixBlendMode: "luminosity" }} />
         <div className="absolute inset-0 bg-gradient-to-b from-background via-transparent to-background" />
       </motion.div>
 
@@ -164,7 +148,7 @@ export const AnimeShowcase = () => {
         animate={{ opacity: [0.05, 0.12, 0.05], x: [0, 10, 0] }}
         transition={{ duration: 6, repeat: Infinity }}
         className="absolute right-0 top-1/2 -translate-y-1/2 w-80 pointer-events-none select-none"
-        style={{ mixBlendMode: "screen", filter: "hue-rotate(30deg)" }} />
+        style={{ mixBlendMode: "screen", filter: "hue-rotate(-10deg)" }} />
 
       <div className="absolute left-0 top-0 bottom-0 w-px pointer-events-none"
         style={{ background: "linear-gradient(180deg, transparent, hsl(var(--primary) / 0.3), transparent)" }} />
@@ -181,7 +165,7 @@ export const AnimeShowcase = () => {
           </div>
           <h2 className="reveal-el text-6xl sm:text-8xl font-black leading-none"
             style={{ fontFamily: "'Impact','Arial Black',sans-serif" }}>
-            <span className="text-gradient-gold">SHIPPED</span>
+            <span className="text-gradient-crunchy">SHIPPED</span>
             <span className="text-foreground"> WORK</span>
           </h2>
           <div className="reveal-el flex items-center gap-3 mt-4">
@@ -203,7 +187,7 @@ export const AnimeShowcase = () => {
               <span className="text-xs font-mono tracking-[0.3em] text-secondary">技術スタック • ARSENAL</span>
               <h3 className="text-3xl font-black text-foreground mt-1"
                 style={{ fontFamily: "'Impact','Arial Black',sans-serif" }}>
-                TECH <span className="text-gradient-gold italic">STACK</span>
+                TECH <span className="text-gradient-crunchy italic">STACK</span>
               </h3>
             </div>
           </div>

@@ -6,70 +6,69 @@
 
 @layer base {
   :root {
-    --background: 0 0% 2%;
+    --background: 240 7% 3%;
     --foreground: 0 0% 100%;
 
-    --card: 0 0% 4%;
+    --card: 240 6% 6%;
     --card-foreground: 0 0% 100%;
 
-    --popover: 0 0% 4%;
+    --popover: 240 6% 6%;
     --popover-foreground: 0 0% 100%;
 
-    /* Gold primary — Indo-Japanese anime aesthetic */
-    --primary: 43 65% 54%;
-    --primary-foreground: 0 0% 2%;
+    /* Crunchyroll Orange — 🍊 the only true anime color */
+    --primary: 24 91% 54%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 270 50% 65%;
+    --secondary: 270 50% 60%;
     --secondary-foreground: 0 0% 100%;
 
-    --muted: 0 0% 8%;
-    --muted-foreground: 0 0% 65%;
+    --muted: 240 5% 10%;
+    --muted-foreground: 0 0% 60%;
 
-    --accent: 43 65% 54%;
-    --accent-foreground: 0 0% 2%;
+    --accent: 24 91% 54%;
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 10%;
-    --input: 0 0% 10%;
-    --ring: 43 65% 54%;
+    --border: 240 5% 12%;
+    --input: 240 5% 12%;
+    --ring: 24 91% 54%;
 
     --radius: 0.75rem;
 
-    /* Anime gold tokens */
-    --crunchy-orange: 43 65% 54%;
-    --crunchy-deep: 0 0% 2%;
-    --crunchy-surface: 0 0% 5%;
-    --crunchy-glow: 43 80% 60%;
-    --cursed-purple: 270 50% 65%;
+    /* Crunchyroll tokens */
+    --crunchy-orange: 24 91% 54%;
+    --crunchy-deep: 240 7% 3%;
+    --crunchy-surface: 240 6% 8%;
+    --crunchy-glow: 24 100% 60%;
+    --cursed-purple: 270 50% 60%;
     --cursed-deep: 270 80% 30%;
-    --anime-gold: 43 65% 55%;
     --anime-cyan: 199 90% 70%;
     --anime-red: 0 100% 60%;
     --anime-green: 160 67% 52%;
     --anime-pink: 340 60% 65%;
 
-    --gradient-crunchy: linear-gradient(135deg, hsl(43 65% 54%), hsl(43 80% 60%));
-    --gradient-cursed: linear-gradient(135deg, hsl(270 50% 65%), hsl(43 65% 54%));
-    --gradient-dark: linear-gradient(180deg, hsl(0 0% 2%), hsl(0 0% 4%));
-    --gradient-gold: linear-gradient(135deg, #DAA520, #F5C842, #B8860B);
+    --gradient-crunchy: linear-gradient(135deg, hsl(24 91% 54%), hsl(24 100% 60%));
+    --gradient-cursed: linear-gradient(135deg, hsl(270 50% 60%), hsl(24 91% 54%));
+    --gradient-dark: linear-gradient(180deg, hsl(240 7% 3%), hsl(240 6% 6%));
+    --gradient-orange: linear-gradient(135deg, #F47521 0%, #FF9B4A 50%, #E8600A 100%);
 
-    --shadow-crunchy: 0 0 40px hsl(43 65% 54% / 0.25);
-    --shadow-cursed: 0 0 60px hsl(270 50% 65% / 0.15);
-    --shadow-glow: 0 0 80px hsl(43 80% 60% / 0.12);
+    --shadow-crunchy: 0 0 40px hsl(24 91% 54% / 0.25);
+    --shadow-cursed: 0 0 60px hsl(270 50% 60% / 0.15);
+    --shadow-glow: 0 0 80px hsl(24 100% 60% / 0.12);
 
     --font-display: 'Space Grotesk', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
 
-    --sidebar-background: 0 0% 4%;
+    --sidebar-background: 240 6% 6%;
     --sidebar-foreground: 0 0% 90%;
-    --sidebar-primary: 43 65% 54%;
+    --sidebar-primary: 24 91% 54%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 0 0% 8%;
+    --sidebar-accent: 240 5% 10%;
     --sidebar-accent-foreground: 0 0% 90%;
-    --sidebar-border: 0 0% 10%;
-    --sidebar-ring: 43 65% 54%;
+    --sidebar-border: 240 5% 12%;
+    --sidebar-ring: 24 91% 54%;
   }
 }
 
@@ -96,17 +95,18 @@
 @layer components {
   .text-gradient-crunchy {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(135deg, #DAA520, #F5C842, #C9A84C);
+    background-image: linear-gradient(135deg, #F47521, #FF9B4A, #E8600A);
   }
 
   .text-gradient-cursed {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(135deg, hsl(270 50% 65%), hsl(43 65% 54%));
+    background-image: linear-gradient(135deg, hsl(270 50% 60%), hsl(24 91% 54%));
   }
 
+  /* Keep backward compat alias */
   .text-gradient-gold {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(135deg, #DAA520 0%, #F5C842 50%, #B8860B 100%);
+    background-image: linear-gradient(135deg, #F47521 0%, #FF9B4A 50%, #E8600A 100%);
   }
 
   .glow-crunchy {
@@ -118,7 +118,7 @@
   }
 
   .border-glow {
-    border: 1px solid hsl(43 65% 54% / 0.2);
+    border: 1px solid hsl(24 91% 54% / 0.2);
   }
 
   .glass-card {
@@ -127,8 +127,8 @@
 
   .anime-grid {
     background-image:
-      linear-gradient(hsl(43 65% 54% / 0.02) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(43 65% 54% / 0.02) 1px, transparent 1px);
+      linear-gradient(hsl(24 91% 54% / 0.02) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(24 91% 54% / 0.02) 1px, transparent 1px);
     background-size: 60px 60px;
   }
 
@@ -143,7 +143,7 @@
   .scan-line {
     background: linear-gradient(
       transparent 0%,
-      hsl(43 65% 54% / 0.03) 50%,
+      hsl(24 91% 54% / 0.03) 50%,
       transparent 100%
     );
     animation: scan-line 8s linear infinite;
@@ -171,8 +171,8 @@
   100% { background-position: 0 100vh; }
 }
 
-/* Scrollbar */
+/* Scrollbar — Crunchyroll orange */
 ::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: hsl(0 0% 2%); }
-::-webkit-scrollbar-thumb { background: hsl(43 65% 54% / 0.3); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: hsl(43 65% 54% / 0.5); }
+::-webkit-scrollbar-track { background: hsl(240 7% 3%); }
+::-webkit-scrollbar-thumb { background: hsl(24 91% 54% / 0.3); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(24 91% 54% / 0.5); }

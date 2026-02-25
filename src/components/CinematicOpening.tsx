@@ -31,7 +31,7 @@ export const CinematicOpening = () => {
               <motion.div initial={{ scaleX: 0 }} animate={{ scaleX: 1 }}
                 transition={{ duration: 0.6, delay: 0.3, ease: "easeOut" }}
                 className="h-px w-32 mx-auto mb-4"
-                style={{ background: "hsl(var(--primary))", transformOrigin: "center" }} />
+                style={{ background: "#F47521", transformOrigin: "center" }} />
               <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.5 }}
                 className="text-primary font-mono text-xs tracking-[0.5em] uppercase">
@@ -43,12 +43,12 @@ export const CinematicOpening = () => {
                 transition={{ delay: 0.7, duration: 0.8 }}
                 className="text-foreground text-4xl sm:text-6xl font-black mt-2"
                 style={{ fontFamily: "'Impact','Arial Black',sans-serif" }}>
-                AMIT<span className="text-gradient-gold">FOLIO</span>
+                AMIT<span className="text-gradient-crunchy">FOLIO</span>
               </motion.h1>
               <motion.div initial={{ scaleX: 0 }} animate={{ scaleX: 1 }}
                 transition={{ duration: 0.6, delay: 0.9, ease: "easeOut" }}
                 className="h-px w-32 mx-auto mt-4"
-                style={{ background: "hsl(var(--primary))", transformOrigin: "center" }} />
+                style={{ background: "#F47521", transformOrigin: "center" }} />
             </div>
           </motion.div>
 
