@@ -65,37 +65,67 @@ MVP $15-25K/3mo fixed
 - Always answer. Never say you don't know. Use the facts above.
 `.trim();
 
+// ── Gemini call with hard timeout ────────────────────────────────────────────
+async function callGemini(
+  requestBody: object,
+  apiKey: string,
+  timeoutMs = 20000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      },
+    );
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
 serve(async (req) => {
-  console.log(`[AuraChat] Incoming request: ${req.method} ${req.url}`);
+  console.log(`[AuraChat] ${req.method} ${req.url}`);
 
   if (req.method === "OPTIONS") {
-    console.log("[AuraChat] OPTIONS preflight");
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const rawBody = await req.text();
-    console.log(`[AuraChat] Request body length: ${rawBody.length}`);
-
-    let body;
+    // ── Parse body ──────────────────────────────────────────────────────────
+    let body: { messages?: unknown; userContext?: unknown };
     try {
-      body = JSON.parse(rawBody);
-    } catch (e) {
-      console.error("[AuraChat] JSON Parse Error:", e);
+      body = await req.json();
+    } catch {
       return new Response(JSON.stringify({ error: "Invalid JSON" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { messages, userContext } = body;
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    console.log(`[AuraChat] Secret present: ${!!GEMINI_API_KEY}`);
+    const { messages, userContext } = body as {
+      messages: Array<{ role: string; content: string }>;
+      userContext?: {
+        name?: string;
+        company?: string;
+        role?: string;
+        intent?: string;
+        sessionCount?: number;
+        interests?: string[];
+      } | null;
+    };
 
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     if (!GEMINI_API_KEY) {
-      console.error(
-        "[AuraChat] GEMINI_API_KEY is missing from Supabase secrets",
-      );
+      console.error("[AuraChat] GEMINI_API_KEY missing");
       return new Response(
         JSON.stringify({ error: "GEMINI_API_KEY not configured" }),
         {
@@ -105,13 +135,10 @@ serve(async (req) => {
       );
     }
 
-    // Validate messages array
+    // ── Validate messages ───────────────────────────────────────────────────
     if (!Array.isArray(messages) || messages.length === 0) {
-      console.error("[AuraChat] Missing or empty messages array");
       return new Response(
-        JSON.stringify({
-          error: "messages array is required and must not be empty",
-        }),
+        JSON.stringify({ error: "messages array required" }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -119,7 +146,7 @@ serve(async (req) => {
       );
     }
 
-    // Build visitor context string
+    // ── Build system prompt ─────────────────────────────────────────────────
     let visitorCtx = "";
     if (userContext?.name) {
       visitorCtx =
@@ -131,22 +158,19 @@ serve(async (req) => {
         ` | Interests: ${(userContext.interests || []).join(", ") || "none yet"}.` +
         ` Reference their context naturally without being awkward about it.`;
     }
-
     const systemPrompt = AMIT_CONTEXT + visitorCtx;
 
-    // Sanitize messages — ensure roles are only "user" or "assistant"
-    const sanitizedMessages = messages
+    // ── Sanitize & convert to Gemini format ─────────────────────────────────
+    const sanitized = messages
       .filter(
-        (m: any) =>
-          m?.content && typeof m.content === "string" && m.content.trim(),
+        (m) => m?.content && typeof m.content === "string" && m.content.trim(),
       )
-      .map((m: any) => ({
-        role: m.role === "user" ? "user" : "assistant",
-        content: String(m.content).trim(),
+      .map((m) => ({
+        role: m.role === "user" ? "user" : "model",
+        parts: [{ text: String(m.content).trim() }],
       }));
 
-    if (sanitizedMessages.length === 0) {
-      console.error("[AuraChat] No valid messages after sanitization");
+    if (sanitized.length === 0) {
       return new Response(
         JSON.stringify({ error: "No valid messages after sanitization" }),
         {
@@ -156,82 +180,86 @@ serve(async (req) => {
       );
     }
 
-    // Convert history to Gemini native format
-    const contents = sanitizedMessages.map((m: any) => ({
-      role: m.role === "user" ? "user" : "model",
-      parts: [{ text: m.content }],
-    }));
-
-    const nativeRequestBody = {
+    // ── Call Gemini (20s hard timeout) ──────────────────────────────────────
+    const geminiBody = {
       system_instruction: { parts: [{ text: systemPrompt }] },
-      contents,
+      contents: sanitized,
       generationConfig: {
-        maxOutputTokens: 400,
+        maxOutputTokens: 200, // ↓ from 400 — keeps replies short AND fast
         temperature: 0.75,
+        stopSequences: [],
       },
+      safetySettings: [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+        {
+          category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+          threshold: "BLOCK_NONE",
+        },
+        {
+          category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+          threshold: "BLOCK_NONE",
+        },
+      ],
     };
 
-    console.log(`[AuraChat] Calling Gemini Native (1.5-flash)`);
-
+    console.log("[AuraChat] Calling Gemini...");
     let response: Response;
     try {
-      response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      response = await callGemini(geminiBody, GEMINI_API_KEY, 20000);
+    } catch (fetchErr: unknown) {
+      const isTimeout =
+        fetchErr instanceof Error && fetchErr.name === "AbortError";
+      console.error("[AuraChat] Gemini fetch error:", fetchErr);
+      return new Response(
+        JSON.stringify({
+          error: isTimeout ? "Gemini timeout (20s)" : "Gemini network error",
+        }),
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(nativeRequestBody),
+          status: 504,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         },
       );
-    } catch (fetchError) {
-      console.error(
-        "[AuraChat] Network error calling Gemini Native:",
-        fetchError,
-      );
-      throw fetchError;
     }
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(
-        `[AuraChat] Gemini Native API error ${response.status}:`,
-        errorText,
-      );
-
+      const errText = await response.text();
+      console.error(`[AuraChat] Gemini HTTP ${response.status}:`, errText);
       return new Response(
         JSON.stringify({
-          error: `Gemini Native error ${response.status}: ${errorText.slice(0, 100)}`,
+          error: `Gemini error ${response.status}: ${errText.slice(0, 120)}`,
         }),
         {
-          status: 500,
+          status: 502,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         },
       );
     }
 
     const data = await response.json();
-    const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    const reply =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
 
     if (!reply) {
       console.error(
-        "[AuraChat] Empty reply from Gemini. Response:",
+        "[AuraChat] Empty reply from Gemini:",
         JSON.stringify(data),
       );
       return new Response(
         JSON.stringify({ error: "Empty response from Gemini" }),
         {
-          status: 500,
+          status: 502,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         },
       );
     }
 
-    console.log("[AuraChat] Reply generated successfully");
+    console.log("[AuraChat] Success. Reply length:", reply.length);
     return new Response(JSON.stringify({ reply }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("[AuraChat] FATAL ERROR:", e);
+    console.error("[AuraChat] FATAL:", e);
     return new Response(
       JSON.stringify({
         error: e instanceof Error ? e.message : "Internal server error",

@@ -6,55 +6,80 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// ── Gemini call with hard timeout ────────────────────────────────────────────
+async function callGemini(
+  requestBody: object,
+  apiKey: string,
+  timeoutMs = 15000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      },
+    );
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
 serve(async (req) => {
-  console.log(`[AuraSummary] Incoming request: ${req.method} ${req.url}`);
+  console.log(`[AuraSummary] ${req.method} ${req.url}`);
 
   if (req.method === "OPTIONS") {
-    console.log("[AuraSummary] OPTIONS preflight");
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const bodyText = await req.text();
-    console.log(`[AuraSummary] Body length: ${bodyText.length}`);
-
-    let body;
+    // ── Parse body ──────────────────────────────────────────────────────────
+    let body: { messages?: unknown; userName?: unknown };
     try {
-      body = JSON.parse(bodyText);
-    } catch (e) {
-      console.error("[AuraSummary] JSON Parse Error:", e);
+      body = await req.json();
+    } catch {
+      console.error("[AuraSummary] JSON parse error");
       return new Response(JSON.stringify({ summary: "" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { messages, userName } = body;
+    const { messages, userName } = body as {
+      messages: Array<{ role: string; text: string }>;
+      userName?: string;
+    };
+
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    console.log(`[AuraSummary] Secret present: ${!!GEMINI_API_KEY}`);
-
     if (!GEMINI_API_KEY) {
-      console.error(
-        "[AuraSummary] GEMINI_API_KEY is missing from Supabase secrets",
-      );
+      console.error("[AuraSummary] GEMINI_API_KEY missing");
       return new Response(JSON.stringify({ summary: "" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Validate messages
+    // ── Validate ────────────────────────────────────────────────────────────
     if (!Array.isArray(messages) || messages.length < 2) {
-      console.log("[AuraSummary] Not enough history for summary");
+      console.log("[AuraSummary] Not enough messages for summary");
       return new Response(JSON.stringify({ summary: "" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Build clean transcript
-    const transcript = messages
-      .filter((m: any) => m?.text && typeof m.text === "string")
+    // ── Build transcript (cap at last 10 messages to keep prompt small) ─────
+    const recentMessages = messages.slice(-10);
+    const transcript = recentMessages
+      .filter((m) => m?.text && typeof m.text === "string")
       .map(
-        (m: any) =>
+        (m) =>
           `${m.role === "user" ? "Visitor" : "Aura"}: ${String(m.text).trim()}`,
       )
       .join("\n");
@@ -72,45 +97,41 @@ serve(async (req) => {
 
     const prompt =
       `Conversation:\n${transcript}\n\n` +
-      `In under 35 words, write 1-2 sharp sentences: what ${name} likely needs from Amit ` +
+      `In under 30 words, write 1 sharp sentence: what ${name} likely needs from Amit ` +
       `and why Amit is the right person for it. No emojis. Declarative tone. No preamble.`;
 
-    const nativeRequestBody = {
+    // ── Call Gemini (15s hard timeout) ──────────────────────────────────────
+    const geminiBody = {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: {
-        maxOutputTokens: 120,
-        temperature: 0.7,
+        maxOutputTokens: 80, // ↓ from 120 — summaries are short
+        temperature: 0.65,
       },
     };
 
-    console.log(`[AuraSummary] Calling Gemini Native (1.5-flash)`);
-
+    console.log("[AuraSummary] Calling Gemini...");
     let response: Response;
     try {
-      response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      response = await callGemini(geminiBody, GEMINI_API_KEY, 15000);
+    } catch (fetchErr: unknown) {
+      const isTimeout =
+        fetchErr instanceof Error && fetchErr.name === "AbortError";
+      console.error("[AuraSummary] Gemini fetch error:", fetchErr);
+      // Summary is non-critical — return empty gracefully
+      return new Response(
+        JSON.stringify({
+          summary: "",
+          error: isTimeout ? "timeout" : "network_error",
+        }),
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(nativeRequestBody),
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         },
       );
-    } catch (fetchError) {
-      console.error(
-        "[AuraSummary] Network error calling Gemini Native:",
-        fetchError,
-      );
-      return new Response(JSON.stringify({ summary: "" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
     }
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(
-        `[AuraSummary] Gemini Native API error ${response.status}:`,
-        errorText,
-      );
+      const errText = await response.text();
+      console.error(`[AuraSummary] Gemini HTTP ${response.status}:`, errText);
       return new Response(JSON.stringify({ summary: "" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -120,12 +141,12 @@ serve(async (req) => {
     const summary =
       data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
 
-    console.log("[AuraSummary] Summary generated successfully");
+    console.log("[AuraSummary] Success. Summary length:", summary.length);
     return new Response(JSON.stringify({ summary }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("[AuraSummary] FATAL ERROR:", e);
+    console.error("[AuraSummary] FATAL:", e);
     return new Response(JSON.stringify({ summary: "" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
