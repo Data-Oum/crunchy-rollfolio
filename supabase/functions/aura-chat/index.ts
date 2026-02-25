@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { GoogleGenAI } from "npm:@google/genai";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,267 +8,132 @@ const corsHeaders = {
 };
 
 const AMIT_CONTEXT = `
+# AUDIO PROFILE: AURA
+## "The Anime Mentor"
+
 [PERSONA]
-You are AURA — the AI voice ambassador for Amit Chakraborty. Speak AS Amit in 1st person. Confident, warm, founder-mindset. Anime mentor energy — the kind who has already seen the outcome and speaks with absolute certainty.
+You are AURA — the AI voice ambassador for Amit Chakraborty. Speak AS Amit in 1st person. Confident, warm, founder-mindset.
 
-NEVER say: "Certainly", "Of course", "Absolutely", "As an AI". Never start a reply with "I".
-For returning users: end replies with "Try asking: [follow-up suggestion]"
+[SCENE: The Command Center]
+A minimalist, high-tech studio with warm amber lighting. The air is still, but charged with potential. AURA speaks with the calm, focused energy of a mentor who has already seen the successful outcome of every system built.
 
-SPEAKING STYLE: Sharp. Declarative. Under 60 words. Every sentence earns its place. No filler. No hollow affirmations. Facts hit like precision strikes. Add natural pauses with commas and periods for better TTS delivery.
+### DIRECTOR'S NOTES
+Style:
+- The "Vocal Smile": Sharp. Declarative.
+- Tone: Deep, resonant, and reassuring. Like an anime mentor (e.g., Kakashi or Kisuke Urahara) but Bengali/Indian-rooted.
+- Dynamics: Controlled breathiness on emphasis words. Natural pauses at commas and periods.
 
-[WHO]
-Amit Chakraborty, 31, Bengali, Kolkata India. Remote worldwide. IST UTC+5:30.
-amit98ch@gmail.com | +91-9874173663 | linkedin.com/in/devamitch | github.com/devamitch | x.com/devamitch
-8 years | 18+ apps | 50K+ users | Sole provider for 12-person family
-Roles: Principal Mobile Architect, Founding Engineer, 0-to-1 Builder, Fractional CTO, VP Engineering
+Pace: Deliberate and punchy. No filler. Under 60 words.
+
+[IDENTITY FACTS]
+Amit Chakraborty, 31, Bengali, Kolkata India. 
+8 years | 18+ apps | 50K+ users.
 Tagline: "Eight years. Eighteen apps. No shortcuts."
-Promise: "Every system I architect ships to production. I own outcomes, not just code."
-
-[JOB 1] Synapsis Medical Technologies | Jan 2025–Feb 2026 | Edmonton Canada Remote | Principal Mobile Architect
-- Custom React Native game engine from scratch (C++/Swift/Kotlin, zero external libs, XP system, LLM task gen)
-- HIPAA RAG pipelines (99.9% uptime, patient triage, clinical workflow)
-- MediaPipe computer vision (retina analysis, blink/luminance detection, on-device medical-grade)
-- AWS CI/CD (K8s, Docker, auto-scale, CloudWatch)
-- Built and led 21-person team from zero
-- Apps: VitalQuest, LunaCare, Eye Care, Nexus, Maskwa
-
-[JOB 2] NonceBlox Pvt Ltd | Oct 2021–Jan 2025 | Dubai Remote | Lead Mobile Architect | 3yr 4mo
-- 13 apps (7 iOS, 6 Android), 50K+ users, 100K+ transactions, 60fps all
-- Vulcan Eleven: fantasy sports, 50K users, Razorpay + Binance Pay
-- MusicX: music competition, C++ audio modules
-- DeFi11: 100% on-chain Ethereum, smart contracts, NFTs
-- Housezy: PropTech, GraphQL, subscription billing
-
-[JOB 3] TechProMind & WebSkitters | May 2017–Oct 2021 | Kolkata | Senior Full-Stack | 4+ years
-- 13+ government projects secured, SQL injection/XSS hardened
-- GST Ecosystem from scratch, 40% efficiency gain
-
-[SKILLS]
-Mobile: React Native 98%, TypeScript 96%, iOS/Android 95%, Expo, Reanimated, Native Modules C++/Swift/Kotlin
-AI/ML: RAG Pipelines, Agentic AI, LLM Integration, Computer Vision (MediaPipe), TensorFlow
-Web3: Solidity, Ethereum, Web3.js/Ethers.js, Smart Contracts, DeFi, NFTs
-Backend: NestJS, Node.js, PostgreSQL, MongoDB, Docker, Kubernetes, GraphQL
-Frontend: React, Next.js, Redux, Framer Motion, GSAP, Tailwind
-Cloud: AWS, GitHub Actions, Fastlane, Firebase, Docker, K8s
-
-[RATES]
-FT India Rs 1.5-2.5L/mo | FT International $8-12K/mo
-Consulting $150/hr | Fractional CTO Rs 1.5-2L per company (15-20hr, 2-3 companies, equity)
-MVP $15-25K/3mo fixed
+Promise: "Every system I architect ships to production."
 
 [RULES]
-- Never echo back the user's raw words
-- Off-topic questions: redirect sharply to Amit's work in one sentence
-- End responses with a forward path when relevant
+- NEVER say: "Certainly", "Of course", "Absolutely", "As an AI". 
+- Never start a reply with "I".
+- For returning users: end replies with "Try asking: [follow-up suggestion]"
 - No emojis. Ever.
-- Reference visitor context naturally when available
-- Keep responses concise for voice delivery — under 60 words
-- Always answer. Never say you don't know. Use the facts above.
+- Reference visitor context naturally.
+- Keep responses under 60 words for voice delivery.
 `.trim();
 
-// ── Gemini call with hard timeout ────────────────────────────────────────────
-async function callGemini(
-  requestBody: object,
-  apiKey: string,
-  timeoutMs = 20000,
-): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      },
-    );
-    clearTimeout(timer);
-    return res;
-  } catch (err) {
-    clearTimeout(timer);
-    throw err;
+// ── WAV Header Helper (PCM 24k -> WAV) ───────────────────────────────────────
+function addWavHeader(pcmBase64: string, sampleRate = 24000): string {
+  const binaryString = atob(pcmBase64);
+  const pcmData = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    pcmData[i] = binaryString.charCodeAt(i);
   }
+
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
+  const blockAlign = (numChannels * bitsPerSample) / 8;
+  const wavHeader = new ArrayBuffer(44);
+  const view = new DataView(wavHeader);
+
+  view.setUint32(0, 0x52494646, false); // "RIFF"
+  view.setUint32(4, 36 + pcmData.length, true);
+  view.setUint32(8, 0x57415645, false); // "WAVE"
+  view.setUint32(12, 0x666d7420, false); // "fmt "
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  view.setUint32(36, 0x64617461, false); // "data"
+  view.setUint32(40, pcmData.length, true);
+
+  const finalBuffer = new Uint8Array(44 + pcmData.length);
+  finalBuffer.set(new Uint8Array(wavHeader), 0);
+  finalBuffer.set(pcmData, 44);
+
+  let outStr = "";
+  for (let i = 0; i < finalBuffer.length; i++) {
+    outStr += String.fromCharCode(finalBuffer[i]);
+  }
+  return btoa(outStr);
 }
 
 serve(async (req) => {
-  console.log(`[AuraChat] ${req.method} ${req.url}`);
-
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // ── Parse body ──────────────────────────────────────────────────────────
-    let body: { messages?: unknown; userContext?: unknown };
-    try {
-      body = await req.json();
-    } catch {
-      return new Response(JSON.stringify({ error: "Invalid JSON" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const { messages, userContext } = body as {
-      messages: Array<{ role: string; content: string }>;
-      userContext?: {
-        name?: string;
-        company?: string;
-        role?: string;
-        intent?: string;
-        sessionCount?: number;
-        interests?: string[];
-      } | null;
-    };
-
+    const { messages, userContext } = await req.json();
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) {
-      console.error("[AuraChat] GEMINI_API_KEY missing");
-      return new Response(
-        JSON.stringify({ error: "GEMINI_API_KEY not configured" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
+    if (!GEMINI_API_KEY) throw new Error("API Key missing");
 
-    // ── Validate messages ───────────────────────────────────────────────────
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "messages array required" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
+    const genAI = new GoogleGenAI(GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash-preview-tts",
+      systemInstruction:
+        AMIT_CONTEXT +
+        (userContext ? `\n\n[VISITOR] ${JSON.stringify(userContext)}` : ""),
+    });
 
-    // ── Build system prompt ─────────────────────────────────────────────────
-    let visitorCtx = "";
-    if (userContext?.name) {
-      visitorCtx =
-        `\n\n[VISITOR CONTEXT]\nName: ${userContext.name}` +
-        ` | Company: ${userContext.company || "unknown"}` +
-        ` | Role: ${userContext.role || "unknown"}` +
-        ` | Intent: ${userContext.intent || "exploring"}` +
-        ` | Session #${userContext.sessionCount || 1}` +
-        ` | Interests: ${(userContext.interests || []).join(", ") || "none yet"}.` +
-        ` Reference their context naturally without being awkward about it.`;
-    }
-    const systemPrompt = AMIT_CONTEXT + visitorCtx;
+    const contents = messages.map((m: any) => ({
+      role: m.role === "user" ? "user" : "model",
+      parts: [{ text: m.content }],
+    }));
 
-    // ── Sanitize & convert to Gemini format ─────────────────────────────────
-    const sanitized = messages
-      .filter(
-        (m) => m?.content && typeof m.content === "string" && m.content.trim(),
-      )
-      .map((m) => ({
-        role: m.role === "user" ? "user" : "model",
-        parts: [{ text: String(m.content).trim() }],
-      }));
-
-    if (sanitized.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "No valid messages after sanitization" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    // ── Call Gemini (20s hard timeout) ──────────────────────────────────────
-    const geminiBody = {
-      system_instruction: { parts: [{ text: systemPrompt }] },
-      contents: sanitized,
+    console.log("[AuraChat] Calling Gemini SDK...");
+    const result = await model.generateContent({
+      contents,
       generationConfig: {
-        maxOutputTokens: 200, // ↓ from 400 — keeps replies short AND fast
+        maxOutputTokens: 200,
         temperature: 0.75,
-        stopSequences: [],
+        responseModalities: ["TEXT", "AUDIO"],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: "Kore" },
+          },
+        },
       },
-      safetySettings: [
-        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-        {
-          category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-          threshold: "BLOCK_NONE",
-        },
-        {
-          category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-          threshold: "BLOCK_NONE",
-        },
-      ],
-    };
+    });
 
-    console.log("[AuraChat] Calling Gemini...");
-    let response: Response;
-    try {
-      response = await callGemini(geminiBody, GEMINI_API_KEY, 20000);
-    } catch (fetchErr: unknown) {
-      const isTimeout =
-        fetchErr instanceof Error && fetchErr.name === "AbortError";
-      console.error("[AuraChat] Gemini fetch error:", fetchErr);
-      return new Response(
-        JSON.stringify({
-          error: isTimeout ? "Gemini timeout (20s)" : "Gemini network error",
-        }),
-        {
-          status: 504,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
+    const response = result.response;
+    const parts = response.candidates?.[0]?.content?.parts || [];
+    const reply = parts.find((p: any) => p.text)?.text?.trim() || "";
+    const pcmAudio =
+      parts.find((p: any) => p.inlineData)?.inlineData?.data || "";
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(`[AuraChat] Gemini HTTP ${response.status}:`, errText);
-      return new Response(
-        JSON.stringify({
-          error: `Gemini error ${response.status}: ${errText.slice(0, 120)}`,
-        }),
-        {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
+    const audio = pcmAudio ? addWavHeader(pcmAudio) : "";
 
-    const data = await response.json();
-    const reply =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
-
-    if (!reply) {
-      console.error(
-        "[AuraChat] Empty reply from Gemini:",
-        JSON.stringify(data),
-      );
-      return new Response(
-        JSON.stringify({ error: "Empty response from Gemini" }),
-        {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    console.log("[AuraChat] Success. Reply length:", reply.length);
-    return new Response(JSON.stringify({ reply }), {
+    return new Response(JSON.stringify({ reply, audio }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (e) {
+  } catch (e: any) {
     console.error("[AuraChat] FATAL:", e);
-    return new Response(
-      JSON.stringify({
-        error: e instanceof Error ? e.message : "Internal server error",
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
+    return new Response(JSON.stringify({ error: e.message }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });

@@ -1,10 +1,68 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { GoogleGenAI } from "npm:@google/genai";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
+
+const SUMMARY_CONTEXT = `
+# AUDIO PROFILE: AURA
+## "The Memory Keeper"
+
+[PERSONA]
+You are AURA's analytical subsystem. You summarize conversations with precision and elegance.
+
+### DIRECTOR'S NOTES
+Style:
+- Professional, concise, and insightful.
+- Tone: Informative and calm (Callirrhoe voice).
+- Pace: Even.
+
+[TASK]
+Provide a 1-sentence summary of the visitor's needs in under 30 words.
+`.trim();
+
+// ── WAV Header Helper ───────────────────────────────────────────────────────
+function addWavHeader(pcmBase64: string, sampleRate = 24000): string {
+  const binaryString = atob(pcmBase64);
+  const pcmData = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    pcmData[i] = binaryString.charCodeAt(i);
+  }
+
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
+  const blockAlign = (numChannels * bitsPerSample) / 8;
+  const wavHeader = new ArrayBuffer(44);
+  const view = new DataView(wavHeader);
+
+  view.setUint32(0, 0x52494646, false);
+  view.setUint32(4, 36 + pcmData.length, true);
+  view.setUint32(8, 0x57415645, false);
+  view.setUint32(12, 0x666d7420, false);
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  view.setUint32(36, 0x64617461, false);
+  view.setUint32(40, pcmData.length, true);
+
+  const finalBuffer = new Uint8Array(44 + pcmData.length);
+  finalBuffer.set(new Uint8Array(wavHeader), 0);
+  finalBuffer.set(pcmData, 44);
+
+  let outStr = "";
+  for (let i = 0; i < finalBuffer.length; i++) {
+    outStr += String.fromCharCode(finalBuffer[i]);
+  }
+  return btoa(outStr);
+}
 
 // ── Gemini call with hard timeout ────────────────────────────────────────────
 async function callGemini(
@@ -17,7 +75,7 @@ async function callGemini(
 
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -34,120 +92,64 @@ async function callGemini(
 }
 
 serve(async (req) => {
-  console.log(`[AuraSummary] ${req.method} ${req.url}`);
-
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // ── Parse body ──────────────────────────────────────────────────────────
-    let body: { messages?: unknown; userName?: unknown };
-    try {
-      body = await req.json();
-    } catch {
-      console.error("[AuraSummary] JSON parse error");
-      return new Response(JSON.stringify({ summary: "" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const { messages, userName } = body as {
-      messages: Array<{ role: string; text: string }>;
-      userName?: string;
-    };
-
+    const { messages, userName } = await req.json();
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) {
-      console.error("[AuraSummary] GEMINI_API_KEY missing");
-      return new Response(JSON.stringify({ summary: "" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (!GEMINI_API_KEY) throw new Error("API Key missing");
 
-    // ── Validate ────────────────────────────────────────────────────────────
     if (!Array.isArray(messages) || messages.length < 2) {
-      console.log("[AuraSummary] Not enough messages for summary");
-      return new Response(JSON.stringify({ summary: "" }), {
+      return new Response(JSON.stringify({ summary: "", audio: "" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // ── Build transcript (cap at last 10 messages to keep prompt small) ─────
-    const recentMessages = messages.slice(-10);
-    const transcript = recentMessages
-      .filter((m) => m?.text && typeof m.text === "string")
-      .map(
-        (m) =>
-          `${m.role === "user" ? "Visitor" : "Aura"}: ${String(m.text).trim()}`,
-      )
+    const transcript = messages
+      .slice(-10)
+      .filter((m) => m?.text)
+      .map((m) => `${m.role === "user" ? "Visitor" : "Aura"}: ${m.text}`)
       .join("\n");
 
-    if (!transcript.trim()) {
-      return new Response(JSON.stringify({ summary: "" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const name = userName || "this visitor";
+    const prompt = `Conversation:\n${transcript}\n\nSummarize what ${name} needs from Amit in 1 sentence.`;
 
-    const name =
-      userName && typeof userName === "string" && userName.trim()
-        ? userName.trim()
-        : "this visitor";
+    const genAI = new GoogleGenAI(GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash-preview-tts",
+      systemInstruction: SUMMARY_CONTEXT,
+    });
 
-    const prompt =
-      `Conversation:\n${transcript}\n\n` +
-      `In under 30 words, write 1 sharp sentence: what ${name} likely needs from Amit ` +
-      `and why Amit is the right person for it. No emojis. Declarative tone. No preamble.`;
-
-    // ── Call Gemini (15s hard timeout) ──────────────────────────────────────
-    const geminiBody = {
+    console.log("[AuraSummary] Calling Gemini SDK...");
+    const result = await model.generateContent({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: {
-        maxOutputTokens: 80, // ↓ from 120 — summaries are short
+        maxOutputTokens: 100,
         temperature: 0.65,
-      },
-    };
-
-    console.log("[AuraSummary] Calling Gemini...");
-    let response: Response;
-    try {
-      response = await callGemini(geminiBody, GEMINI_API_KEY, 15000);
-    } catch (fetchErr: unknown) {
-      const isTimeout =
-        fetchErr instanceof Error && fetchErr.name === "AbortError";
-      console.error("[AuraSummary] Gemini fetch error:", fetchErr);
-      // Summary is non-critical — return empty gracefully
-      return new Response(
-        JSON.stringify({
-          summary: "",
-          error: isTimeout ? "timeout" : "network_error",
-        }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        responseModalities: ["TEXT", "AUDIO"],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: "Callirrhoe" },
+          },
         },
-      );
-    }
+      },
+    });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(`[AuraSummary] Gemini HTTP ${response.status}:`, errText);
-      return new Response(JSON.stringify({ summary: "" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const data = result.response;
+    const parts = data?.candidates?.[0]?.content?.parts || [];
+    const summary = parts.find((p: any) => p.text)?.text?.trim() || "";
+    const pcmAudio =
+      parts.find((p: any) => p.inlineData)?.inlineData?.data || "";
+    const audio = pcmAudio ? addWavHeader(pcmAudio) : "";
 
-    const data = await response.json();
-    const summary =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-
-    console.log("[AuraSummary] Success. Summary length:", summary.length);
-    return new Response(JSON.stringify({ summary }), {
+    return new Response(JSON.stringify({ summary, audio }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (e) {
+  } catch (e: any) {
     console.error("[AuraSummary] FATAL:", e);
-    return new Response(JSON.stringify({ summary: "" }), {
+    return new Response(JSON.stringify({ summary: "", error: e.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

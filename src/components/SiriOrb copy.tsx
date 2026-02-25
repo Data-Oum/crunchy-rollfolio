@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 //  Get key: https://aistudio.google.com/app/apikey (sign in with Google, 10 sec)
 // ═══════════════════════════════════════════════════════════════════════════════
 const GEMINI_KEY = process.env.GEMINI_KEY;
-const GEMINI_MODEL = "gemini-2.0-flash";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 const SYSTEM = `You are Amit Chakraborty's AI hype-man on his portfolio.
 Answer in UNDER 60 words. Punchy. Energetic. Like an anime battle announcer.
