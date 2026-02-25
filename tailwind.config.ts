@@ -66,6 +66,7 @@ export default {
           cyan: "hsl(var(--anime-cyan))",
           red: "hsl(var(--anime-red))",
           green: "hsl(var(--anime-green))",
+          pink: "hsl(var(--anime-pink, 340 60% 65%))",
         },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",

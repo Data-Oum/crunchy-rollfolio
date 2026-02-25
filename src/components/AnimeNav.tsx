@@ -7,6 +7,8 @@ const NAV_ITEMS = [
   { label: "ホーム", en: "Home", href: "#hero" },
   { label: "作品", en: "Projects", href: "#showcase" },
   { label: "冒険", en: "Journey", href: "#journey" },
+  { label: "証言", en: "Reviews", href: "#testimonials" },
+  { label: "依頼", en: "Services", href: "#services" },
   { label: "接触", en: "Contact", href: "#contact" },
 ];
 
@@ -49,46 +51,44 @@ export const AnimeNav = () => {
       style={{
         background: scrolled ? "hsl(var(--background) / 0.92)" : "transparent",
         backdropFilter: scrolled ? "blur(20px)" : "none",
-        borderBottom: scrolled ? "1px solid hsl(var(--primary) / 0.12)" : "none",
+        borderBottom: scrolled ? "1px solid hsl(var(--primary) / 0.1)" : "none",
       }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo */}
           <motion.div whileHover={{ scale: 1.05 }} onClick={() => scrollTo("#hero")}
             className="flex items-center gap-2.5 cursor-pointer group">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center relative overflow-hidden bg-primary"
-              style={{ boxShadow: "0 0 20px hsl(var(--primary) / 0.3)" }}>
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center relative overflow-hidden"
+              style={{ background: "linear-gradient(135deg, #DAA520, #F5C842)", boxShadow: "0 0 20px hsl(var(--primary) / 0.3)" }}>
               <motion.div animate={{ rotate: 360 }}
                 transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
                 className="absolute inset-0 rounded-xl opacity-30"
                 style={{ background: "conic-gradient(from 0deg, transparent, hsl(var(--foreground) / 0.4), transparent)" }} />
-              <span className="text-primary-foreground font-black text-xs font-mono relative z-10">AC</span>
+              <span className="text-background font-black text-xs font-mono relative z-10">AC</span>
             </div>
             <div className="hidden sm:block">
               <span className="text-foreground font-black text-lg tracking-tight"
                 style={{ fontFamily: "'Impact','Arial Black',sans-serif" }}>
                 {PROFILE.nameFirst.toUpperCase()}
               </span>
-              <span className="text-primary font-black text-lg tracking-tight"
+              <span className="text-gradient-gold font-black text-lg tracking-tight"
                 style={{ fontFamily: "'Impact','Arial Black',sans-serif" }}>
                 FOLIO
               </span>
             </div>
           </motion.div>
 
-          {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-1">
+          <div className="hidden lg:flex items-center gap-0.5">
             {NAV_ITEMS.map((item) => {
               const isActive = active === item.href;
               return (
                 <motion.button key={item.en} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
                   onClick={() => scrollTo(item.href)}
-                  className="relative px-4 py-2 rounded-lg text-sm font-mono font-bold transition-all duration-200"
+                  className="relative px-3 py-2 rounded-lg text-xs font-mono font-bold transition-all duration-200"
                   style={{
                     color: isActive ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
-                    background: isActive ? "hsl(var(--primary) / 0.12)" : "transparent",
+                    background: isActive ? "hsl(var(--primary) / 0.1)" : "transparent",
                   }}>
-                  <span className="text-[10px] mr-1 font-mono" style={{ color: `hsl(var(--primary) / ${isActive ? 1 : 0.5})` }}>
+                  <span className="text-[9px] mr-0.5 font-mono" style={{ color: `hsl(var(--primary) / ${isActive ? 1 : 0.5})` }}>
                     {item.label}
                   </span>
                   {item.en}
@@ -102,8 +102,7 @@ export const AnimeNav = () => {
             })}
           </div>
 
-          {/* Right — wave bars */}
-          <div className="hidden md:flex items-center gap-2">
+          <div className="hidden lg:flex items-center gap-2">
             <div className="flex gap-0.5 items-end h-4">
               {[...Array(4)].map((_, i) => (
                 <motion.div key={i}
@@ -113,11 +112,10 @@ export const AnimeNav = () => {
                   style={{ height: `${8 + i * 3}px`, transformOrigin: "bottom" }} />
               ))}
             </div>
-            <span className="text-[9px] text-muted-foreground font-mono tracking-widest">VOICE ON</span>
+            <span className="text-[9px] text-muted-foreground font-mono tracking-widest">声 ON</span>
           </div>
 
-          {/* Mobile hamburger */}
-          <button onClick={() => setIsOpen(!isOpen)} className="md:hidden p-2 relative w-8 h-6">
+          <button onClick={() => setIsOpen(!isOpen)} className="lg:hidden p-2 relative w-8 h-6">
             {[0, 1, 2].map((i) => (
               <motion.span key={i}
                 animate={
@@ -132,13 +130,12 @@ export const AnimeNav = () => {
         </div>
       </div>
 
-      {/* Mobile drawer */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
             initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3 }}
-            className="md:hidden overflow-hidden bg-background/97 border-b border-primary/15">
+            className="lg:hidden overflow-hidden bg-background/97 border-b border-primary/15">
             <div className="px-4 py-4 space-y-1">
               {NAV_ITEMS.map((item, i) => (
                 <motion.button key={item.en}
