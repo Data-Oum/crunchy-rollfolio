@@ -353,7 +353,7 @@ const RESPONSE_POOL: Partial<Record<Intent, LangMap>> = {
   greeting: {
     en: [
       "Aura here — Amit Chakraborty's voice AI. Eight years of engineering, 18 production apps, 50K users. What do you want to know?",
-      "Hey. I'm Aura. Built to speak as Amit. Ask about the medical game engine, the Web3 work, his rates — anything. What brings you here?",
+      "Hey. I'm Aura. Built to speak as Amit. Ask about the visual AI orchestrator, the Web3 work, his rates — anything. What brings you here?",
       "Good to hear from you. Aura — Amit's AI. Whether you're recruiting, evaluating, or just curious, I've got the full picture. What's your angle?",
       "Hello. Aura. I know Amit's entire career in detail — 8 years, 18 apps, medical AI, Web3, team building, rates. Start anywhere.",
     ],
@@ -437,21 +437,21 @@ const RESPONSE_POOL: Partial<Record<Intent, LangMap>> = {
 
   medical_work: {
     en: [
-      "VitalQuest runs on a game engine I built from scratch — React Native core, pure C++, Swift, Kotlin. No Unity, no third-party libs. HIPAA RAG pipeline. Real patients. 99.9% uptime. That's Synapsis Medical.",
-      "Five clinical apps: VitalQuest, LunaCare, Eye Care, Nexus, Maskwa. MediaPipe running on-device for retina analysis and blink detection — zero cloud for the vision layer. All HIPAA-compliant, all production.",
+      "Aura Studio runs on a game engine I built from scratch — React Native core, pure C++, Swift, Kotlin. No Unity, no third-party libs. HIPAA RAG pipeline. Real patients. 99.9% uptime. That's Independent Studio.",
+      "Five clinical apps: Aura Studio, Kshem, Neev, Bloom Directory, HarmonyBloom. MediaPipe running on-device for retina analysis and blink detection — zero cloud for the vision layer. All HIPAA-compliant, all production.",
       "The constraint that made it interesting: HIPAA means no Unity dependency. So I wrote the render loop in C++, Swift for iOS, Kotlin for Android, React Native bridging the layers. Jan 2025 to Feb 2026, Edmonton remote.",
     ],
     hi: [
-      "VitalQuest ek game engine pe chal raha hai jo maine khud banaya — React Native core, pure C++, Swift, Kotlin. HIPAA RAG pipeline. Real patients. 99.9% uptime. Yeh Synapsis Medical ka kaam tha.",
-      "Paanch clinical apps: VitalQuest, LunaCare, Eye Care, Nexus, Maskwa. MediaPipe on-device retina analysis ke liye — cloud dependency bilkul nahi. Sab HIPAA-compliant.",
+      "Aura Studio ek game engine pe chal raha hai jo maine khud banaya — React Native core, pure C++, Swift, Kotlin. HIPAA RAG pipeline. Real patients. 99.9% uptime. Yeh Independent Studio ka kaam tha.",
+      "Paanch clinical apps: Aura Studio, Kshem, Neev, Bloom Directory, HarmonyBloom. MediaPipe on-device retina analysis ke liye — cloud dependency bilkul nahi. Sab HIPAA-compliant.",
     ],
     ja: [
-      "VitalQuestはゼロから構築したゲームエンジンで動いています。React Nativeコア、純粋なC++、Swift、Kotlin。Unity不使用。HIPAAのRAGパイプライン。本物の患者データ。稼働率99.9%。",
-      "5つの臨床アプリ：VitalQuest、LunaCare、アイケア、Nexus、Maskwa。MediaPipeをオンデバイスで実行 — クラウド依存なし。すべてHIPAA準拠。",
+      "Aura Studioはゼロから構築したゲームエンジンで動いています。React Nativeコア、純粋なC++、Swift、Kotlin。Unity不使用。HIPAAのRAGパイプライン。本物の患者データ。稼働率99.9%。",
+      "5つの臨床アプリ：Aura Studio、Kshem、アイケア、Bloom Directory、HarmonyBloom。MediaPipeをオンデバイスで実行 — クラウド依存なし。すべてHIPAA準拠。",
     ],
     ko: [
-      "VitalQuest는 제가 처음부터 만든 게임 엔진으로 구동됩니다. React Native 코어, 순수 C++, Swift, Kotlin. Unity 없음. HIPAA RAG 파이프라인. 실제 환자 데이터. 가동률 99.9%.",
-      "5개의 임상 앱: VitalQuest, LunaCare, Eye Care, Nexus, Maskwa. MediaPipe를 온디바이스로 실행 — 클라우드 의존성 없음. 모두 HIPAA 준수.",
+      "Aura Studio는 제가 처음부터 만든 게임 엔진으로 구동됩니다. React Native 코어, 순수 C++, Swift, Kotlin. Unity 없음. HIPAA RAG 파이프라인. 실제 환자 데이터. 가동률 99.9%.",
+      "5개의 임상 앱: Aura Studio, Kshem, Neev, Bloom Directory, HarmonyBloom. MediaPipe를 온디바이스로 실행 — 클라우드 의존성 없음. 모두 HIPAA 준수.",
     ],
   },
 
@@ -517,20 +517,20 @@ const RESPONSE_POOL: Partial<Record<Intent, LangMap>> = {
 
   team_leadership: {
     en: [
-      "Hired 21 engineers at Synapsis from zero. No HR. No playbook. No existing team. Found them, evaluated them, onboarded them, set the culture, defined the process — while simultaneously architecting 5 clinical apps.",
-      "Leadership at Synapsis wasn't managing an existing team. It was building the entire org from a blank page. Job specs, interviews, offers, onboarding, engineering culture, sprint cadence. 21 people. One year.",
-      "Building from zero while shipping production systems is a different category than managing an existing org. Both happened simultaneously at Synapsis. 21 engineers. 5 clinical apps. 99.9% uptime maintained throughout.",
+      "Hired 21 engineers at Independent Studio from zero. No HR. No playbook. No existing team. Found them, evaluated them, onboarded them, set the culture, defined the process — while simultaneously architecting 5 clinical apps.",
+      "Leadership at Independent Studio wasn't managing an existing team. It was building the entire org from a blank page. Job specs, interviews, offers, onboarding, engineering culture, sprint cadence. 21 people. One year.",
+      "Building from zero while shipping production systems is a different category than managing an existing org. Both happened simultaneously at Independent Studio. 21 engineers. 5 clinical apps. 99.9% uptime maintained throughout.",
     ],
     hi: [
-      "Synapsis mein 21 engineers hire kiye — zero se. Koi HR nahi, koi playbook nahi. Khud dhundha, evaluate kiya, onboard kiya, culture banaya. Saath mein 5 clinical apps bhi architect kar raha tha.",
+      "Independent Studio mein 21 engineers hire kiye — zero se. Koi HR nahi, koi playbook nahi. Khud dhundha, evaluate kiya, onboard kiya, culture banaya. Saath mein 5 clinical apps bhi architect kar raha tha.",
       "Leadership matlab existing team manage karna nahi. Poora engineering org blank page se banana. Job specs, interviews, culture, sprints — sab akela. 21 log. Ek saal.",
     ],
     ja: [
-      "Synapsisでゼロから21人のエンジニアを採用。HR部門なし、プレイブックなし。採用、評価、オンボーディング、文化構築 — 同時に5つの臨床アプリを設計。",
+      "Independent Studioでゼロから21人のエンジニアを採用。HR部門なし、プレイブックなし。採用、評価、オンボーディング、文化構築 — 同時に5つの臨床アプリを設計。",
       "リーダーシップとは既存チームの管理ではなく、白紙から組織全体を構築すること。21人。1年間。稼働率99.9%維持。",
     ],
     ko: [
-      "Synapsis에서 21명의 엔지니어를 제로에서 채용. HR 없음, 플레이북 없음. 채용, 평가, 온보딩, 문화 구축 — 동시에 임상 앱 5개 설계.",
+      "Independent Studio에서 21명의 엔지니어를 제로에서 채용. HR 없음, 플레이북 없음. 채용, 평가, 온보딩, 문화 구축 — 동시에 임상 앱 5개 설계.",
       "리더십은 기존 팀 관리가 아니라 백지에서 조직 전체를 구축하는 것. 21명. 1년. 가동률 99.9% 유지.",
     ],
   },
@@ -636,20 +636,20 @@ const RESPONSE_POOL: Partial<Record<Intent, LangMap>> = {
 
   projects_portfolio: {
     en: [
-      "18 apps shipped across 8 years. Highlights: VitalQuest — medical game engine, HIPAA, clinical triage. Vulcan Eleven — fantasy sports, 50K users, Binance Pay. DeFi11 — 100% on-chain Ethereum. MusicX — custom C++ audio. Housezy — PropTech.",
+      "18 apps shipped across 8 years. Highlights: Aura Studio — visual AI orchestrator, HIPAA, clinical triage. Vulcan Eleven — fantasy sports, 50K users, Binance Pay. DeFi11 — 100% on-chain Ethereum. MusicX — custom C++ audio. Housezy — PropTech.",
       "The portfolio spans medical AI, fantasy sports, DeFi, music tech, PropTech. Common thread: every single one is production with real users, delivered on time, zero critical post-launch bugs on flagships.",
-      "Two companies. Synapsis Medical: 5 clinical apps. Nonce Blox Dubai: 13 apps. Total: 18 apps, 50K users, 100K+ Web3 transactions. Game engine, AI pipelines, blockchain. All mobile-native.",
+      "Two companies. Independent Studio: 5 clinical apps. Nonce Blox Dubai: 13 apps. Total: 18 apps, 50K users, 100K+ Web3 transactions. Game engine, AI pipelines, blockchain. All mobile-native.",
     ],
     hi: [
-      "18 apps 8 saal mein ship kiye. Highlights: VitalQuest — medical game engine, HIPAA. Vulcan Eleven — 50K users, Binance Pay. DeFi11 — 100% on-chain Ethereum. MusicX — custom C++ audio.",
+      "18 apps 8 saal mein ship kiye. Highlights: Aura Studio — visual AI orchestrator, HIPAA. Vulcan Eleven — 50K users, Binance Pay. DeFi11 — 100% on-chain Ethereum. MusicX — custom C++ audio.",
       "Portfolio mein medical AI, fantasy sports, DeFi, music tech, PropTech. Ek cheez common: sab production mein real users ke saath, on time deliver, zero critical bugs.",
     ],
     ja: [
-      "8年間で18本のアプリを出荷。ハイライト: VitalQuest — 医療ゲームエンジン、HIPAA。Vulcan Eleven — 5万ユーザー、Binance Pay。DeFi11 — 100%オンチェーン。MusicX — C++オーディオ。",
+      "8年間で18本のアプリを出荷。ハイライト: Aura Studio — 医療ゲームエンジン、HIPAA。Vulcan Eleven — 5万ユーザー、Binance Pay。DeFi11 — 100%オンチェーン。MusicX — C++オーディオ。",
       "医療AI、ファンタジースポーツ、DeFi、音楽技術、PropTech。共通点: すべて本番環境で実ユーザー、期限通り、重大バグゼロ。",
     ],
     ko: [
-      "8년간 앱 18개 출시. 하이라이트: VitalQuest — 의료 게임 엔진, HIPAA. Vulcan Eleven — 5만 사용자, Binance Pay. DeFi11 — 100% 온체인. MusicX — C++ 오디오.",
+      "8년간 앱 18개 출시. 하이라이트: Aura Studio — 의료 게임 엔진, HIPAA. Vulcan Eleven — 5만 사용자, Binance Pay. DeFi11 — 100% 온체인. MusicX — C++ 오디오.",
       "의료 AI, 판타지 스포츠, DeFi, 음악 기술, PropTech. 공통점: 모두 프로덕션, 실 사용자, 일정 준수, 치명적 버그 제로.",
     ],
   },
@@ -657,20 +657,20 @@ const RESPONSE_POOL: Partial<Record<Intent, LangMap>> = {
   freelance_availability: {
     en: [
       "Currently available and actively looking. Open to freelance, contract, full-time remote, or fractional CTO. Can start immediately. Flexible on terms for the right mission.",
-      "Available now. Just wrapped up at Synapsis Medical. Freelance from $100/hr, fixed MVPs from $12K, full-time remote $6K to $10K monthly. What's the scope?",
+      "Available now. Just wrapped up at Independent Studio. Freelance from $100/hr, fixed MVPs from $12K, full-time remote $6K to $10K monthly. What's the scope?",
       "Immediately available. Six years remote-only — no ramp-up needed, async is natural. What do you need built?",
     ],
     hi: [
       "Abhi available hain aur actively dekh rahe hain. Freelance, contract, full-time remote, ya fractional CTO — sab open hai. Immediately start kar sakte hain.",
-      "Abhi available. Synapsis Medical se recently nikle hain. Freelance $100/hr se, fixed MVPs $12K se, full-time remote $6K se $10K. Scope kya hai?",
+      "Abhi available. Independent Studio se recently nikle hain. Freelance $100/hr se, fixed MVPs $12K se, full-time remote $6K se $10K. Scope kya hai?",
     ],
     ja: [
       "現在利用可能で積極的に探しています。フリーランス、契約、フルタイムリモート、フラクショナルCTO — すべてオープン。すぐに開始できます。",
-      "今すぐ利用可能。Synapsis Medicalを最近終了。時給$100から、固定MVP$12Kから、フルタイムリモート月$6K〜$10K。",
+      "今すぐ利用可能。Independent Studioを最近終了。時給$100から、固定MVP$12Kから、フルタイムリモート月$6K〜$10K。",
     ],
     ko: [
       "현재 가능하고 적극적으로 찾고 있습니다. 프리랜서, 계약, 풀타임 리모트, 파트타임 CTO — 모두 열려 있습니다. 즉시 시작 가능.",
-      "지금 바로 가능. Synapsis Medical에서 최근 종료. 프리랜서 시간당 $100부터, 고정 MVP $12K부터. 어떤 범위인가요?",
+      "지금 바로 가능. Independent Studio에서 최근 종료. 프리랜서 시간당 $100부터, 고정 MVP $12K부터. 어떤 범위인가요?",
     ],
   },
 
@@ -692,17 +692,17 @@ const RESPONSE_POOL: Partial<Record<Intent, LangMap>> = {
 
   backend_infra: {
     en: [
-      "NestJS, Node, PostgreSQL, MongoDB, GraphQL, Redis. AWS, Kubernetes, Docker, GitHub Actions, CloudWatch. Built auto-scaling infra at Synapsis maintaining 99.9% uptime under clinical load.",
+      "NestJS, Node, PostgreSQL, MongoDB, GraphQL, Redis. AWS, Kubernetes, Docker, GitHub Actions, CloudWatch. Built auto-scaling infra at Independent Studio maintaining 99.9% uptime under clinical load.",
       "Full-stack infra ownership. NestJS APIs, PostgreSQL at scale, Redis caching, GraphQL for complex data. AWS + K8s + Docker. Owned the infra end-to-end, not just the app layer.",
     ],
     hi: [
-      "NestJS, Node, PostgreSQL, MongoDB, GraphQL, Redis. AWS, Kubernetes, Docker. Synapsis mein auto-scaling infra banaya jo 99.9% uptime maintain karta tha.",
+      "NestJS, Node, PostgreSQL, MongoDB, GraphQL, Redis. AWS, Kubernetes, Docker. Independent Studio mein auto-scaling infra banaya jo 99.9% uptime maintain karta tha.",
     ],
     ja: [
-      "NestJS、Node、PostgreSQL、MongoDB、GraphQL、Redis。AWS、Kubernetes、Docker。Synapsisで99.9%稼働率を維持する自動スケーリングインフラを構築。",
+      "NestJS、Node、PostgreSQL、MongoDB、GraphQL、Redis。AWS、Kubernetes、Docker。Independent Studioで99.9%稼働率を維持する自動スケーリングインフラを構築。",
     ],
     ko: [
-      "NestJS, Node, PostgreSQL, MongoDB, GraphQL, Redis. AWS, Kubernetes, Docker. Synapsis에서 99.9% 가동률을 유지하는 자동 확장 인프라 구축.",
+      "NestJS, Node, PostgreSQL, MongoDB, GraphQL, Redis. AWS, Kubernetes, Docker. Independent Studio에서 99.9% 가동률을 유지하는 자동 확장 인프라 구축.",
     ],
   },
 
@@ -837,7 +837,7 @@ const RESPONSE_POOL: Partial<Record<Intent, LangMap>> = {
 
   help_what_to_ask: {
     en: [
-      "Start anywhere. The medical game engine is the most technically impressive thing. The Web3 work had 50K users. Or ask about his rates, his team building, or how to contact him.",
+      "Start anywhere. The visual AI orchestrator is the most technically impressive thing. The Web3 work had 50K users. Or ask about his rates, his team building, or how to contact him.",
       "Good starting points: 'Tell me about the game engine', 'What's his tech stack', 'What does he charge', 'How do I contact him'. Each goes deep.",
     ],
     hi: [

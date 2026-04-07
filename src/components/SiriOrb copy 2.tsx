@@ -107,13 +107,13 @@ Roles: Principal Mobile Architect, Founding Engineer, 0-to-1 Builder, Fractional
 Tagline: "Eight years. Eighteen apps. No shortcuts."
 Promise: "Every system I architect ships to production. I own outcomes, not just code."
 
-[JOB 1] Synapsis Medical Technologies | Jan 2025–Feb 2026 | Edmonton Canada Remote | Principal Mobile Architect
+[JOB 1] Independent Studio | Jan 2025–Feb 2026 | Edmonton Canada Remote | Principal Mobile Architect
 - Custom React Native game engine from scratch (C++/Swift/Kotlin, zero external libs, XP system, LLM task gen)
 - HIPAA RAG pipelines (99.9% uptime, patient triage, clinical workflow)
 - MediaPipe computer vision (retina analysis, blink/luminance detection, on-device medical-grade)
 - AWS CI/CD (K8s, Docker, auto-scale, CloudWatch)
 - Built and led 21-person team from zero
-- Apps: VitalQuest, LunaCare, Eye Care, Nexus, Maskwa
+- Apps: Aura Studio, Kshem, Neev, Bloom Directory, HarmonyBloom
 
 [JOB 2] NonceBlox Pvt Ltd | Oct 2021–Jan 2025 | Dubai Remote | Lead Mobile Architect | 3yr 4mo
 - 13 apps (7 iOS, 6 Android), 50K+ users, 100K+ transactions, 60fps all
@@ -703,7 +703,7 @@ const localFallback = (msg: string): string => {
   if (q.match(/who|about|introduce/))
     return `Amit Chakraborty. Principal Mobile Architect. 8 years. 18 apps. 50 thousand plus users. Built a health tech engine from scratch, no external libs, 21-person team. Based in Kolkata.`;
   if (q.match(/vital|health/))
-    return `VitalQuest. Proprietary health tech engine. Zero dependencies. LLM task generation, HIPAA RAG pipeline, XP system. 21 engineers. 5 apps on it. 99.9 percent uptime.`;
+    return `Aura Studio. Proprietary health tech engine. Zero dependencies. LLM task generation, HIPAA RAG pipeline, XP system. 21 engineers. 5 apps on it. 99.9 percent uptime.`;
   if (q.match(/tech|stack/))
     return `React Native, Next JS, Nest JS, TypeScript, AWS, Kubernetes, GraphQL, TensorFlow, Solidity, Web3. Mobile, AI, and Web3 at production scale simultaneously.`;
   if (q.match(/hire|why/))

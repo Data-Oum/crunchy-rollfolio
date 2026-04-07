@@ -58,7 +58,7 @@ function fallback(msg: string): string {
   if (q.match(/who|about|introduce/))
     return `🔥 Amit Chakraborty — Principal Mobile Architect. 8 years. 18 apps. 50K users. Built a game engine from SCRATCH. Zero external libs. 21-person team. VP-level ops. Based in ${PROFILE.location}.`;
   if (q.match(/vital/))
-    return `⚡ VitalQuest — Amit's crown jewel. Custom game engine, zero deps. LLM task gen, HIPAA RAG pipeline, XP system. 21 engineers. 5 apps running on it. 99.9% uptime. Legendary.`;
+    return `⚡ Aura Studio — Amit's crown jewel. Custom game engine, zero deps. LLM task gen, HIPAA RAG pipeline, XP system. 21 engineers. 5 apps running on it. 99.9% uptime. Legendary.`;
   if (q.match(/tech|stack/))
     return `💻 React Native · Next.js · NestJS · TypeScript · AWS · K8s · GraphQL · TensorFlow · Solidity · Web3.js · Go · Rust. Mobile + AI + Web3 at production scale.`;
   if (q.match(/hire|why/))
@@ -439,7 +439,7 @@ const CHIPS = [
   "What did he build?",
   "His stack?",
   "Why hire him?",
-  "VitalQuest?",
+  "Aura Studio?",
 ];
 
 const ORB = 80;

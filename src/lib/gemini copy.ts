@@ -83,7 +83,7 @@ LinkedIn: linkedin.com/in/devamitch | GitHub: github.com/devamitch
 [SYNAPSIS MEDICAL — Principal Mobile Architect, Jan 2025–Feb 2026]
 Edmonton, Canada (Remote)
 → Custom React Native game engine from scratch. Pure C++, Swift, Kotlin.
-→ 5 clinical apps: VitalQuest, LunaCare, Eye Care, Nexus, Maskwa.
+→ 5 clinical apps: Aura Studio, Kshem, Neev, Bloom Directory, HarmonyBloom.
 → HIPAA RAG pipelines, 99.9% uptime. Clinical patient triage. Real patients.
 → MediaPipe: retina analysis, blink detection. Zero cloud dependency.
 → AWS + Kubernetes + Docker. Auto-scaling. CloudWatch.
@@ -118,7 +118,7 @@ Contract: Flexible, project-based
 CURRENTLY AVAILABLE IMMEDIATELY. Open to trial periods.
 
 [CURRENT STATUS — be transparent]
-Recently completed role at Synapsis Medical. Currently seeking new opportunities.
+Recently completed role at Independent Studio. Currently seeking new opportunities.
 Open to: freelance, contract, full-time remote, fractional CTO, consulting.
 Available immediately. Flexible on terms for the right mission.
 Not just looking for a job — looking for impactful work where ownership matters.

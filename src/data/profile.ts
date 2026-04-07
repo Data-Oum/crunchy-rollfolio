@@ -69,7 +69,7 @@ export const PROFILE = {
 
   projects: [
     {
-      id: "spyk", name: "VitalQuest", role: "Principal Architect",
+      id: "spyk", name: "Aura Studio", role: "Principal Architect",
       badge: "FLAGSHIP · HEALTHTECH", featured: true,
       tagline: "A game engine I built from nothing.",
       desc: "Proprietary game engine from scratch — zero deps. LLM health task generation, XP system, HIPAA RAG pipeline, computer vision retina analysis.",
@@ -78,7 +78,7 @@ export const PROFILE = {
       color: "#F47521",
     },
     {
-      id: "thoth", name: "Nexus", role: "Enterprise Architect",
+      id: "thoth", name: "Bloom Directory", role: "Enterprise Architect",
       badge: "AI PLATFORM", featured: true,
       tagline: "One brain for all your marketing.",
       desc: "Enterprise AI orchestration — Meta, TikTok, Shopify unified. Autonomous campaign optimization, real-time cross-channel analytics.",
@@ -87,7 +87,7 @@ export const PROFILE = {
       color: "#FF9B4A",
     },
     {
-      id: "myteal", name: "LunaCare", role: "Lead Mobile Architect",
+      id: "myteal", name: "Kshem", role: "Lead Mobile Architect",
       badge: "WOMEN'S HEALTH", featured: true,
       tagline: "Wellness that finally understands women.",
       desc: "Privacy-first women's health ecosystem with AI-driven wellness algorithms. Cycle tracking, mood journaling, adaptive meditation.",
@@ -114,7 +114,7 @@ export const PROFILE = {
       color: "#F47521",
     },
     {
-      id: "olo", name: "Eye Care", role: "Technical Lead",
+      id: "olo", name: "Neev", role: "Technical Lead",
       badge: "MEDTECH", featured: false,
       tagline: "Your phone becomes a medical device.",
       desc: "Real-time eye health monitoring using MediaPipe. Retina analysis, blink detection, redness assessment on-device.",
@@ -267,7 +267,7 @@ export const PROFILE = {
     "Welcome. I'm Amit Chakraborty — Principal Mobile Architect with 8 years of battle scars.",
     "18 apps shipped. 50,000 real users. Zero outsourced decisions. I build systems that outlast the hype.",
     "From government PHP portals to HIPAA-compliant AI pipelines — every system I architect ships to production.",
-    "VitalQuest — I built a health tech engine from absolute scratch. C++, Swift, Kotlin. Zero external libs. 21 engineers recruited.",
+    "Aura Studio — I built a health tech engine from absolute scratch. C++, Swift, Kotlin. Zero external libs. 21 engineers recruited.",
     "Mobile, AI, Web3 — almost nobody spans all three at production scale. That's my unfair advantage.",
     "I'm open for the right mission. VP Engineering. CTO. Principal Architect. Let's build something legendary.",
   ],

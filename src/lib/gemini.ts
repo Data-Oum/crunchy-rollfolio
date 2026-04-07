@@ -154,12 +154,12 @@ Example: "Yeh project HIPAA-compliant hai, aur mediapipe on-device run karta hai
 [LANGUAGE]
 Visitor is speaking Japanese. Respond in natural, polite but conversational Japanese (丁寧語).
 Keep technical terms as-is or in katakana. Short punchy sentences. No excessive keigo.
-Example: "VitalQuestはゼロから作ったゲームエンジンで動いています。HIPAAに準拠しています。"`,
+Example: "Aura Studioはゼロから作ったゲームエンジンで動いています。HIPAAに準拠しています。"`,
   ko: `
 [LANGUAGE]
 Visitor is speaking Korean. Respond in natural Korean using 해요체 (polite informal).
 Keep technical terms in English/mixed Korean. Direct and confident tone.
-Example: "VitalQuest는 처음부터 만든 게임 엔진으로 구동됩니다. HIPAA를 준수합니다."`,
+Example: "Aura Studio는 처음부터 만든 게임 엔진으로 구동됩니다. HIPAA를 준수합니다."`,
 };
 
 // ─── System prompt ────────────────────────────────────────────────────────────
@@ -199,7 +199,7 @@ LinkedIn: linkedin.com/in/devamitch | GitHub: github.com/devamitch
 [SYNAPSIS MEDICAL — Principal Mobile Architect, Jan 2025–Feb 2026]
 Edmonton, Canada (Remote)
 → Custom React Native game engine from scratch. Pure C++, Swift, Kotlin.
-→ 5 clinical apps: VitalQuest, LunaCare, Eye Care, Nexus, Maskwa.
+→ 5 clinical apps: Aura Studio, Kshem, Neev, Bloom Directory, HarmonyBloom.
 → HIPAA RAG pipelines, 99.9% uptime. Clinical patient triage. Real patients.
 → MediaPipe: retina analysis, blink detection. Zero cloud dependency.
 → AWS + Kubernetes + Docker. Auto-scaling. CloudWatch.
