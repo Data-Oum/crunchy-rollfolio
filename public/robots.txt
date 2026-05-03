@@ -1,32 +1,23 @@
-# *
 User-agent: *
 Allow: /
 Disallow: /api/
-Disallow: /_next/
-Disallow: /static/
+Disallow: /admin/
 
-# Googlebot
-User-agent: Googlebot
+User-agent: GPTBot
 Allow: /
 
-# Bingbot
-User-agent: Bingbot
+User-agent: PerplexityBot
 Allow: /
 
-# LinkedInBot
-User-agent: LinkedInBot
+User-agent: ClaudeBot
 Allow: /
 
-# Twitterbot
-User-agent: Twitterbot
+User-agent: anthropic-ai
 Allow: /
 
-# facebookexternalhit
-User-agent: facebookexternalhit
+User-agent: Google-Extended
 Allow: /
 
-# Host
-Host: https://devamit.co.in
+Host: https://crunchyroll.devamit.co.in
 
-# Sitemaps
-Sitemap: https://devamit.co.in/sitemap.xml
+Sitemap: https://crunchyroll.devamit.co.in/sitemap.xml
